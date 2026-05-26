@@ -1,3 +1,4 @@
+import bcrypt from 'bcrypt';
 import User from '../models/user.model.js';
 
 export const register = async (req, res) => {
@@ -30,6 +31,47 @@ export const register = async (req, res) => {
   res.status(201).json({
     success: true,
     message: 'User registered successfully',
+    data: {
+      id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      profilePicture: user.profilePicture,
+      lastSeen: user.lastSeen,
+    },
+  });
+};
+
+export const login = async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email?.trim() || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email and password are required',
+    });
+  }
+
+  const user = await User.findOne({ email: email.trim().toLowerCase() });
+
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password',
+    });
+  }
+
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+
+  if (!isPasswordValid) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password',
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'Login successful',
     data: {
       id: user._id,
       fullName: user.fullName,
