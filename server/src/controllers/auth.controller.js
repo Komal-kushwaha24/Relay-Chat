@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import User from '../models/user.model.js';
 import { generateToken } from '../utils/generateToken.js';
+import { setAuthCookie } from '../utils/setAuthCookie.js';
 
 export const register = async (req, res) => {
   const { fullName, email, password } = req.body;
@@ -29,10 +30,11 @@ export const register = async (req, res) => {
     password,
   });
 
+  setAuthCookie(res, generateToken(user._id));
+
   res.status(201).json({
     success: true,
     message: 'User registered successfully',
-    token: generateToken(user._id),
     data: {
       id: user._id,
       fullName: user.fullName,
@@ -71,10 +73,11 @@ export const login = async (req, res) => {
     });
   }
 
+  setAuthCookie(res, generateToken(user._id));
+
   res.status(200).json({
     success: true,
     message: 'Login successful',
-    token: generateToken(user._id),
     data: {
       id: user._id,
       fullName: user.fullName,
