@@ -84,3 +84,16 @@ export const login = async (req, res) => {
     },
   });
 };
+
+export const getMe = (req, res) => {
+  res.status(200).json({
+    success: true,
+    data: {
+      id: req.user._id,
+      fullName: req.user.fullName,
+      email: req.user.email,
+      profilePicture: req.user.profilePicture,
+      lastSeen: req.user.lastSeen,
+    },
+  });
+};
