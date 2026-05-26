@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   AnimatePresence,
@@ -695,22 +696,16 @@ export default function SignupForm({
             >
               Already have an account?{" "}
 
-              <motion.a
-                href="#"
-                whileHover={{
-                  color: "#22d3ee",
-                }}
+              <Link
+                to="/login"
                 style={{
                   color: "#38bdf8",
-
                   fontWeight: 500,
-
-                  textDecoration:
-                    "none",
+                  textDecoration: "none",
                 }}
               >
                 Sign in →
-              </motion.a>
+              </Link>
             </motion.p>
           </motion.div>
         </div>
