@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import User from '../models/user.model.js';
 import { generateToken } from '../utils/generateToken.js';
-import { setAuthCookie } from '../utils/setAuthCookie.js';
+import { clearAuthCookie, setAuthCookie } from '../utils/setAuthCookie.js';
 
 export const register = async (req, res) => {
   const { fullName, email, password } = req.body;
@@ -98,5 +98,14 @@ export const getMe = (req, res) => {
       profilePicture: req.user.profilePicture,
       lastSeen: req.user.lastSeen,
     },
+  });
+};
+
+export const logout = (req, res) => {
+  clearAuthCookie(res);
+
+  res.status(200).json({
+    success: true,
+    message: 'Logout successful',
   });
 };
