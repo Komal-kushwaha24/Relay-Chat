@@ -1,0 +1,33 @@
+export const CHATS = [
+  {
+    id: 1,
+    name: "Aria Chen",
+    msg: "Just pushed the new build 🚀",
+    time: "2m",
+    online: true,
+    unread: 3,
+    avatar: "AC",
+    color: "#0ea5e9",
+  },
+  {
+    id: 2,
+    name: "Dev Team",
+    msg: "PR review needed on #472",
+    time: "11m",
+    online: true,
+    unread: 1,
+    avatar: "DT",
+    color: "#8b5cf6",
+    group: true,
+  },
+  {
+    id: 3,
+    name: "Marco Ruiz",
+    msg: "Can you hop on a call?",
+    time: "34m",
+    online: false,
+    unread: 0,
+    avatar: "MR",
+    color: "#f59e0b",
+  },
+];
