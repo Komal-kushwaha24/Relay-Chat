@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 
 import FloatInput from "./FloatInput";
 import EyeButton from "./EyeButton";
 import TiltCard from "../effects/TiltCard";
+import { loginUser } from "../../services/api";
 
 export default function LoginForm() {
+  const navigate = useNavigate();
   const [form, setForm] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
@@ -30,7 +32,7 @@ export default function LoginForm() {
     return newErrors;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const validationErrors = validate();
     setErrors(validationErrors);
 
@@ -38,9 +40,28 @@ export default function LoginForm() {
 
     setLoading(true);
 
-    setTimeout(() => {
+    try {
+      const { data } = await loginUser({
+        email: form.email.trim(),
+        password: form.password,
+      });
+
+      const token = data.token ?? data.data?.id;
+
+      if (token) {
+        localStorage.setItem("token", token);
+      }
+
+      navigate("/home");
+    } catch (error) {
+      const message =
+        error.response?.data?.message ||
+        "Login failed. Please try again.";
+
+      alert(message);
+    } finally {
       setLoading(false);
-    }, 1200);
+    }
   };
 
   const stagger = {

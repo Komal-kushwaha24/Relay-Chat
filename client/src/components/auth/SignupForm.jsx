@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import {
   AnimatePresence,
@@ -11,10 +11,12 @@ import EyeButton from "./EyeButton";
 import PasswordStrength from "./PasswordStrength";
 
 import TiltCard from "../effects/TiltCard";
+import { registerUser } from "../../services/api";
 
 export default function SignupForm({
   onSuccess,
 }) {
+  const navigate = useNavigate();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -78,7 +80,7 @@ export default function SignupForm({
     return newErrors;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const validationErrors =
       validate();
 
@@ -92,13 +94,23 @@ export default function SignupForm({
 
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await registerUser({
+        fullName: form.name.trim(),
+        email: form.email.trim(),
+        password: form.password,
+      });
 
-      if (onSuccess) {
-        onSuccess();
-      }
-    }, 1800);
+      navigate("/login");
+    } catch (error) {
+      const message =
+        error.response?.data?.message ||
+        "Registration failed. Please try again.";
+
+      alert(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const stagger = {

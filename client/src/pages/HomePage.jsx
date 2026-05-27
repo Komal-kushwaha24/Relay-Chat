@@ -6,7 +6,7 @@ function HomePage() {
           Relay Chat
         </p>
         <h1 className="mb-3 text-3xl font-semibold text-white">
-          Realtime MERN Chat
+          Realtime Chat Application
         </h1>
         <p className="text-slate-400">
         </p>
