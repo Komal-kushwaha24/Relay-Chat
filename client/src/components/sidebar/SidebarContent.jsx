@@ -1,11 +1,20 @@
 import { memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-import { CHATS } from "../../data/chats";
-
 import Avatar from "../common/Avatar";
 import SearchBar from "./SearchBar";
 import ChatRow from "./ChatRow";
+import { logoutUser } from "../../services/api";
+
+const getInitials = (name) => {
+  if (!name) return "?";
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+};
 
 function SidebarContent({
   active,
@@ -14,20 +23,10 @@ function SidebarContent({
   setSearch,
   filtered,
   onChatSelect,
+  currentUser,
+  onlineUsers = [],
+  onUserClick,
 }) {
-  const totalUnread = useMemo(() => {
-    return CHATS.reduce(
-      (sum, chat) => sum + chat.unread,
-      0
-    );
-  }, []);
-
-  const onlineUsers = useMemo(() => {
-    return CHATS.filter(
-      (chat) => chat.online
-    );
-  }, []);
-
   const handleChatClick = (id) => {
     setActive(id);
 
@@ -35,6 +34,21 @@ function SidebarContent({
       onChatSelect();
     }
   };
+
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+    } catch (err) {
+      console.error("Logout request failed", err);
+    } finally {
+      localStorage.removeItem("token");
+      window.location.href = "/login";
+    }
+  };
+
+  const myInitials = useMemo(() => {
+    return getInitials(currentUser?.fullName);
+  }, [currentUser]);
 
   return (
     <div
@@ -184,28 +198,26 @@ function SidebarContent({
       </div>
 
       {/* ONLINE USERS */}
-           
-     {/* ONLINE USERS */}
 
-<div
-  style={{
-    padding: "10px 18px",
-    borderTop: "1px solid rgba(255,255,255,0.05)",
-    flexShrink: 0,
-  }}
->
-  <div
-    style={{
-      fontSize: "11px",
-      fontWeight: 600,
-      letterSpacing: "0.08em",
-      color: "rgba(31,92,179,0.8)",
-      marginBottom: "10px",
-      fontFamily: "'Outfit', sans-serif",
-    }}
-  >
-    ONLINE NOW
-  </div>
+      <div
+        style={{
+          padding: "10px 18px",
+          borderTop: "1px solid rgba(255,255,255,0.05)",
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            fontSize: "11px",
+            fontWeight: 600,
+            letterSpacing: "0.08em",
+            color: "rgba(34,211,238,0.8)",
+            marginBottom: "10px",
+            fontFamily: "'Outfit', sans-serif",
+          }}
+        >
+          ONLINE NOW
+        </div>
         <div
           style={{
             display: "flex",
@@ -213,73 +225,128 @@ function SidebarContent({
             flexWrap: "wrap",
           }}
         >
-          {onlineUsers.map((chat) => (
-            <Avatar
-              key={chat.id}
-              initials={chat.avatar}
-              color={chat.color}
-              size={32}
-              online
-              group={chat.group}
-            />
+          {onlineUsers.map((user) => (
+            <div
+              key={user.id}
+              onClick={() => {
+                if (onUserClick) onUserClick(user.id);
+                if (onChatSelect) onChatSelect();
+              }}
+              style={{ cursor: "pointer" }}
+              title={`Start chat with ${user.name}`}
+            >
+              <Avatar
+                initials={user.avatar}
+                color={user.color}
+                size={32}
+                online
+              />
+            </div>
           ))}
+          {onlineUsers.length === 0 && (
+            <div
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                fontSize: "11px",
+                color: "rgba(100,116,139,0.5)",
+                padding: "4px 0",
+              }}
+            >
+              No other users registered
+            </div>
+          )}
         </div>
       </div>
 
       {/* Bottom User Profile */}
-    <div
-    style={{
-        marginTop: "auto",
-        padding: "16px",
-        borderTop: "1px solid rgba(255,255,255,0.06)",
-        display: "flex",
-        alignItems: "center",
-        gap: "12px",
-    }}
-    >
-    <div
+      <div
         style={{
-        width: 42,
-        height: 42,
-        borderRadius: "14px",
-        background: "linear-gradient(135deg,#0ea5e9,#22d3ee)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "#fff",
-        fontWeight: 700,
-        fontFamily: "'Outfit', sans-serif",
-        boxShadow: "0 0 20px rgba(34,211,238,0.3)",
+          marginTop: "auto",
+          padding: "16px",
+          borderTop: "1px solid rgba(255,255,255,0.06)",
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
         }}
-    >
-        Y
-    </div>
-
-    <div style={{ flex: 1 }}>
+      >
         <div
-        style={{
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: "14px",
+            background: "linear-gradient(135deg,#0ea5e9,#22d3ee)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             color: "#fff",
-            fontSize: "14px",
-            fontWeight: 600,
+            fontWeight: 700,
             fontFamily: "'Outfit', sans-serif",
-        }}
+            boxShadow: "0 0 20px rgba(34,211,238,0.3)",
+          }}
         >
-        You
+          {myInitials}
         </div>
 
-        <div
-        style={{
-            color: "rgba(100,116,139,0.7)",
-            fontSize: "12px",
-        }}
-        >
-        Online
-        </div>
-    </div>
-     </div>
-    </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              color: "#fff",
+              fontSize: "14px",
+              fontWeight: 600,
+              fontFamily: "'Outfit', sans-serif",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {currentUser?.fullName || "You"}
+          </div>
 
-    
+          <div
+            style={{
+              color: "rgba(34,211,238,0.7)",
+              fontSize: "11px",
+              fontFamily: "'Inter', sans-serif",
+            }}
+          >
+            Online
+          </div>
+        </div>
+
+        <motion.button
+          onClick={handleLogout}
+          whileHover={{ scale: 1.1, color: "#f43f5e" }}
+          whileTap={{ scale: 0.95 }}
+          style={{
+            border: "none",
+            background: "rgba(255,255,255,0.05)",
+            color: "rgba(148,163,184,0.7)",
+            padding: "8px",
+            borderRadius: "8px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          title="Logout"
+        >
+          <svg
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </motion.button>
+      </div>
+    </div>
   );
 }
 

@@ -1,7 +1,16 @@
 import { motion } from "framer-motion";
 import SidebarContent from "./SidebarContent";
 
-function DesktopSidebar({ active, setActive, search, setSearch, filtered }) {
+function DesktopSidebar({
+  active,
+  setActive,
+  search,
+  setSearch,
+  filtered,
+  currentUser,
+  onlineUsers,
+  onUserClick,
+}) {
   return (
     <motion.div
       initial={{ x: -24, opacity: 0 }}
@@ -16,8 +25,14 @@ function DesktopSidebar({ active, setActive, search, setSearch, filtered }) {
       }}
     >
       <SidebarContent
-        active={active} setActive={setActive}
-        search={search} setSearch={setSearch} filtered={filtered}
+        active={active}
+        setActive={setActive}
+        search={search}
+        setSearch={setSearch}
+        filtered={filtered}
+        currentUser={currentUser}
+        onlineUsers={onlineUsers}
+        onUserClick={onUserClick}
       />
     </motion.div>
   );
