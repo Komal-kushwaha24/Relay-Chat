@@ -1,18 +1,24 @@
-const API_BASE = import.meta.env.VITE_API_URL || '/api'
+import axios from 'axios';
 
-export const apiFetch = async (path, options = {}) => {
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-    ...options,
-  })
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL,
+  withCredentials: true,
+});
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(error.message || `Request failed: ${response.status}`)
+export const registerUser = (data) =>
+  api.post('/auth/register', data);
+
+export const loginUser = (data) =>
+  api.post('/auth/login', data);
+
+export const getCurrentUser = () =>
+  api.get('/auth/me');
+
+export const logCurrentUser = async () => {
+  try {
+    const response = await getCurrentUser();
+    console.log(response.data);
+  } catch (error) {
+    console.error(error.response?.data ?? error.message);
   }
-
-  return response.json()
-}
+};
