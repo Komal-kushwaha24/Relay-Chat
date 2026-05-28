@@ -1,7 +1,8 @@
 import {
   memo,
   useMemo,
-   useState,
+  useState,
+  useEffect,
 } from "react";
 
 import { motion, AnimatePresence } from "framer-motion";
@@ -9,8 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Avatar from "../common/Avatar";
 import SearchBar from "./SearchBar";
 import ChatRow from "./ChatRow";
-import { logoutUser } from "../../services/api";
-import { getUsers } from "../../services/api";
+import { logoutUser, getUsers, createConversation } from "../../services/api";
 
 const getInitials = (name) => {
   if (!name) return "?";
@@ -32,7 +32,13 @@ function SidebarContent({
   currentUser,
   onlineUsers = [],
   onUserClick,
+  onConversationCreated,
 }) {
+  const [showNewChat, setShowNewChat] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [usersError, setUsersError] = useState(null);
+
   const handleChatClick = (id) => {
     setActive(id);
 
@@ -52,38 +58,63 @@ function SidebarContent({
     }
   };
 
+  const fetchUsers = async () => {
+    setLoadingUsers(true);
+    setUsersError(null);
+
+    try {
+      const response = await getUsers();
+      const list =
+        response.data?.data ?? response.data?.users ?? response.data ?? [];
+      setUsers(Array.isArray(list) ? list : []);
+    } catch (error) {
+      setUsersError(
+        error.response?.data?.message || error.message || "Failed to load users"
+      );
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showNewChat && users.length === 0 && !loadingUsers) {
+      fetchUsers();
+    }
+  }, [showNewChat]);
+
+  const handleCreateConversation = async (user) => {
+    if (!currentUser?._id && !currentUser?.id) {
+      console.error("Cannot create conversation without current user");
+      return;
+    }
+
+    try {
+      setLoadingUsers(true);
+      const response = await createConversation([
+        currentUser._id ?? currentUser.id,
+        user._id ?? user.id,
+      ]);
+
+      const conversation = response.data?.data ?? response.data ?? null;
+      if (conversation && onConversationCreated) {
+        onConversationCreated(conversation);
+      }
+      setShowNewChat(false);
+    } catch (error) {
+      console.error("Create conversation failed", error);
+      setUsersError(
+        error.response?.data?.message || error.message ||
+          "Failed to create conversation"
+      );
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
   const myInitials = useMemo(() => {
     return getInitials(currentUser?.fullName);
   }, [currentUser]);
 
-  const [showNewChat, setShowNewChat] =
-  useState(false);
-
-
-    const [users, setUsers] =
-      useState([]);
-
-    const [loadingUsers, setLoadingUsers] =
-      useState(false);
-
-const fetchUsers = async () => {
-  try {
-    setLoadingUsers(true);
-
-    const response =
-      await getUsers();
-
-    console.log(response.data);
-
-    setUsers(
-      response.data.users || []
-    );
-  } catch (error) {
-    console.error(error);
-  } finally {
-    setLoadingUsers(false);
-  }
-};
   return (
     <div
       style={{
@@ -250,6 +281,19 @@ const fetchUsers = async () => {
             </motion.div>
           ))}
         </AnimatePresence>
+
+        {filtered.length === 0 && (
+          <div
+            style={{
+              color: "rgba(148,163,184,0.8)",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: "13px",
+              padding: "18px 10px",
+            }}
+          >
+            No conversations yet. Click “New Chat” to start one.
+          </div>
+        )}
       </div>
 
       {/* ONLINE USERS */}
@@ -329,7 +373,9 @@ const fetchUsers = async () => {
   >
     <div
       style={{
-        width: "320px",
+        width: "min(90vw, 420px)",
+        maxHeight: "80vh",
+        overflowY: "auto",
         background: "#0f172a",
         borderRadius: "20px",
         padding: "20px",
@@ -376,9 +422,68 @@ const fetchUsers = async () => {
           color:
             "rgba(255,255,255,0.7)",
           fontSize: "14px",
+          marginBottom: "14px",
         }}
       >
-        Users list will come here
+        Select a user to start a new conversation.
+      </div>
+
+      {loadingUsers && (
+        <div style={{ color: "rgba(148,163,184,0.8)" }}>
+          Loading users...
+        </div>
+      )}
+
+      {usersError && (
+        <div style={{ color: "#f87171" }}>
+          {usersError}
+        </div>
+      )}
+
+      {!loadingUsers && users.length === 0 && !usersError && (
+        <div style={{ color: "rgba(148,163,184,0.8)" }}>
+          No available users to start a chat.
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {users.map((user) => (
+          <button
+            key={user._id ?? user.id}
+            onClick={() => handleCreateConversation(user)}
+            style={{
+              width: "100%",
+              textAlign: "left",
+              borderRadius: "14px",
+              padding: "12px 14px",
+              border: "1px solid rgba(255,255,255,0.08)",
+              background: "rgba(255,255,255,0.03)",
+              color: "#e2e8f0",
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px",
+            }}
+          >
+            <span
+              style={{
+                fontWeight: 700,
+                color: "#fff",
+                fontFamily: "'Outfit', sans-serif",
+              }}
+            >
+              {user.fullName || user.email}
+            </span>
+            <span
+              style={{
+                fontSize: "12px",
+                color: "rgba(148,163,184,0.9)",
+              }}
+            >
+              {user.email}
+            </span>
+          </button>
+        ))}
       </div>
     </div>
   </div>

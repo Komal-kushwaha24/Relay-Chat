@@ -12,6 +12,7 @@ function MobileDrawer({
   currentUser,
   onlineUsers,
   onUserClick,
+  onConversationCreated,
 }) {
   return (
     <AnimatePresence>
@@ -77,6 +78,7 @@ function MobileDrawer({
               currentUser={currentUser}
               onlineUsers={onlineUsers}
               onUserClick={onUserClick}
+              onConversationCreated={onConversationCreated}
             />
           </motion.div>
         </>
