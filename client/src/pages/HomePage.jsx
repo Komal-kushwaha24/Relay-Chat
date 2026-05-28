@@ -98,7 +98,6 @@ export default function HomePage() {
       setDrawerOpen(false);
     }
   }, [isMobile]);
-
   useEffect(() => {
     const socket = getSocket();
     const handleConnect = () => {
@@ -119,9 +118,41 @@ export default function HomePage() {
       );
     };
 
-    const handleConversationUpdate = (update) => {
-      if (!update?.conversationId) return;
-      setConversations((prevConversations) =>
+    // conversation update handled by top-level handler
+
+    const handleConnectError = (error) => {
+      console.error("Socket connection failed", error);
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("online:users", handleOnlineUsers);
+    socket.on("conversation:update", handleConversationUpdated);
+    socket.on("connect_error", handleConnectError);
+
+    if (currentUser) {
+      socket.connect();
+    }
+
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("online:users", handleOnlineUsers);
+      socket.off("conversation:update", handleConversationUpdated);
+      socket.off("connect_error", handleConnectError);
+      socket.disconnect();
+    };
+  }, [currentUser]);
+
+  const sortConversations = (items = []) =>
+    [...items].sort(
+      (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)
+    );
+
+  const handleConversationUpdated = (update) => {
+    if (!update?.conversationId) return;
+    setConversations((prevConversations) =>
+      sortConversations(
         prevConversations.map((conversation) => {
           const conversationId = conversation._id || conversation.id;
           if (conversationId !== update.conversationId) {
@@ -133,37 +164,14 @@ export default function HomePage() {
             updatedAt: update.updatedAt,
           };
         })
-      );
-    };
-
-    const handleConnectError = (error) => {
-      console.error("Socket connection failed", error);
-    };
-
-    socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
-    socket.on("online:users", handleOnlineUsers);
-    socket.on("conversation:update", handleConversationUpdate);
-    socket.on("connect_error", handleConnectError);
-
-    if (currentUser) {
-      socket.connect();
-    }
-
-    return () => {
-      socket.off("connect", handleConnect);
-      socket.off("disconnect", handleDisconnect);
-      socket.off("online:users", handleOnlineUsers);
-      socket.off("conversation:update", handleConversationUpdate);
-      socket.off("connect_error", handleConnectError);
-      socket.disconnect();
-    };
-  }, [currentUser]);
+      )
+    );
+  };
 
   const reloadConversations = async () => {
     try {
       const res = await getConversations();
-      setConversations(res.data?.data ?? res.data ?? []);
+      setConversations(sortConversations(res.data?.data ?? res.data ?? []));
     } catch (err) {
       console.error("Failed to fetch conversations", err);
     }
@@ -194,7 +202,7 @@ export default function HomePage() {
   const chats = useMemo(() => {
     if (!currentUser) return [];
     const onlineIds = new Set(onlineConversationUsers.map((user) => user.id));
-    return conversations.map((conversation) =>
+    return sortConversations(conversations).map((conversation) =>
       formatConversation(conversation, currentUser, onlineIds)
     );
   }, [conversations, currentUser, onlineConversationUsers]);
@@ -223,7 +231,7 @@ export default function HomePage() {
         (item) => (item._id ?? item.id) === id
       );
       if (existing) return prev;
-      return [conversation, ...(prev || [])];
+      return sortConversations([conversation, ...(prev || [])]);
     });
 
     await reloadConversations();
@@ -268,7 +276,7 @@ export default function HomePage() {
               onOpenSidebar={() => setDrawerOpen(true)}
               currentUser={currentUser}
               conversations={conversations}
-              onConversationUpdated={reloadConversations}
+              onConversationUpdated={handleConversationUpdated}
               onConversationCreated={handleConversationCreated}
               onExitChat={() => setActiveId(null)}
             />
@@ -292,7 +300,7 @@ export default function HomePage() {
               isMobile={false}
               currentUser={currentUser}
               conversations={conversations}
-              onConversationUpdated={reloadConversations}
+              onConversationUpdated={handleConversationUpdated}
               onConversationCreated={handleConversationCreated}
               onExitChat={() => setActiveId(null)}
             />

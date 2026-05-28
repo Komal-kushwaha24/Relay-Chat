@@ -7,7 +7,9 @@ import { getMessages, sendMessage } from "../../services/api";
 import { getSocket } from "../../services/socket";
 
 const getMessageId = (message) =>
-  message?._id?.toString?.() ?? message?.id?.toString?.();
+  message?.tempId?.toString?.() ??
+  message?._id?.toString?.() ??
+  message?.id?.toString?.();
 
 const mergeMessages = (existing = [], incoming = []) => {
   const seen = new Set();
@@ -24,6 +26,27 @@ const mergeMessages = (existing = [], incoming = []) => {
   });
 
   return merged;
+};
+
+const replacePendingMessage = (existing = [], tempId, incoming) => {
+  if (!tempId) {
+    return mergeMessages(existing, [incoming]);
+  }
+
+  let replaced = false;
+  const updated = existing.map((message) => {
+    if (message.tempId === tempId) {
+      replaced = true;
+      return incoming;
+    }
+    return message;
+  });
+
+  if (replaced) {
+    return mergeMessages(updated, []);
+  }
+
+  return mergeMessages(existing, [incoming]);
 };
 
 const formatTime = (value) => {
@@ -172,12 +195,29 @@ function ChatArea({
       text: trimmed,
     };
 
+    const tempId = `pending-${Date.now()}`;
+    const pendingMessage = {
+      _id: tempId,
+      tempId,
+      sender: currentUser?._id?.toString?.() || currentUser?.id?.toString?.(),
+      conversation: activeChat.id,
+      text: trimmed,
+      createdAt: new Date().toISOString(),
+      pending: true,
+    };
+
+    setMessages((prev) => mergeMessages(prev, [pendingMessage]));
+    setNewMessage("");
+
     try {
       const sentMessage = await emitChatMessage(payload);
-      setMessages((prev) => mergeMessages(prev, [sentMessage]));
-      setNewMessage("");
+      setMessages((prev) => replacePendingMessage(prev, tempId, sentMessage));
       if (onConversationUpdated) {
-        onConversationUpdated();
+        onConversationUpdated({
+          conversationId: activeChat.id,
+          lastMessage: sentMessage.text,
+          updatedAt: sentMessage.createdAt || new Date().toISOString(),
+        });
       }
     } catch (err) {
       if (!socket?.connected) {
@@ -185,20 +225,25 @@ function ChatArea({
           const res = await sendMessage(activeChat.id, trimmed);
           const message = res.data?.data ?? null;
           if (message) {
-            setMessages((prev) => mergeMessages(prev, [message]));
-            setNewMessage("");
+            setMessages((prev) => replacePendingMessage(prev, tempId, message));
             if (onConversationUpdated) {
-              onConversationUpdated();
+              onConversationUpdated({
+                conversationId: activeChat.id,
+                lastMessage: message.text,
+                updatedAt: message.createdAt || new Date().toISOString(),
+              });
             }
           }
         } catch (apiErr) {
           console.error("Failed to send message", apiErr);
+          setMessages((prev) => prev.filter((msg) => msg.tempId !== tempId));
           setSendError(
             apiErr.response?.data?.message || apiErr.message || err.message || "Failed to send message"
           );
         }
       } else {
         console.error("Failed to send message", err);
+        setMessages((prev) => prev.filter((msg) => msg.tempId !== tempId));
         setSendError(err.message || "Failed to send message");
       }
     }
