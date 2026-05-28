@@ -13,6 +13,7 @@ import ChatArea from "../components/chat/ChatArea";
 export default function HomePage() {
   const [activeId, setActiveId] = useState(null);
   const [search, setSearch] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const isMobile = useIsMobile(768);
@@ -38,6 +39,24 @@ export default function HomePage() {
     }
   }, [isMobile]);
 
+  useEffect(() => {
+    let mounted = true;
+    import("../services/api").then(({ getCurrentUser }) => {
+      (async () => {
+        try {
+          const res = await getCurrentUser();
+          if (!mounted) return;
+          // server may return { user } or { data: { ... } } shapes
+          setCurrentUser(res.data?.user ?? res.data?.data ?? res.data ?? null);
+        } catch (err) {
+          console.error("Failed to fetch current user", err);
+        }
+      })();
+    });
+
+    return () => (mounted = false);
+  }, []);
+
   return (
     <>
       {/* Background */}
@@ -60,6 +79,7 @@ export default function HomePage() {
             search={search}
             setSearch={setSearch}
             filtered={filteredChats}
+            currentUser={currentUser}
           />
 
           <MobileTopBar
@@ -84,6 +104,7 @@ export default function HomePage() {
             search={search}
             setSearch={setSearch}
             filtered={filteredChats}
+            currentUser={currentUser}
           />
 
           <div className="flex-1 overflow-hidden">
