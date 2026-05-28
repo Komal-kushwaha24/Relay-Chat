@@ -73,6 +73,17 @@ function ChatArea({
   const [sendError, setSendError] = useState(null);
   const socket = getSocket();
   const messagesEndRef = useRef(null);
+  const [typingUsers, setTypingUsers] = useState([]);
+  const typingTimeoutRef = useRef(null);
+
+  const emitTyping = (isTyping) => {
+    try {
+      if (!socket || !socket.connected || !activeChat) return;
+      socket.emit('chat:typing', { roomId: activeChat.id, isTyping });
+    } catch (e) {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     if (!activeChat) {
@@ -113,6 +124,21 @@ function ChatArea({
       setMessages((prev) => mergeMessages(prev, [payload.message]));
     };
 
+    const handleIncomingTyping = (payload) => {
+      if (!payload || payload.roomId !== roomId) return;
+      const { userId, name, isTyping } = payload;
+      const myId = currentUser?._id?.toString?.() || currentUser?.id?.toString?.();
+      if (!userId || userId === myId) return;
+
+      setTypingUsers((prev) => {
+        if (isTyping) {
+          if (prev.some((u) => u.userId === userId)) return prev;
+          return [...prev, { userId, name }];
+        }
+        return prev.filter((u) => u.userId !== userId);
+      });
+    };
+
     socket.emit("chat:join", roomId, (response) => {
       if (!response?.success) {
         console.error("Failed to join chat room", response?.message);
@@ -120,9 +146,12 @@ function ChatArea({
     });
 
     socket.on("chat:message", handleIncomingMessage);
+    socket.on("chat:typing", handleIncomingTyping);
 
     return () => {
       socket.off("chat:message", handleIncomingMessage);
+      socket.off("chat:typing", handleIncomingTyping);
+      setTypingUsers([]);
       socket.emit("chat:leave", roomId);
     };
   }, [activeChat?.id, socket]);
@@ -212,6 +241,12 @@ function ChatArea({
     try {
       const sentMessage = await emitChatMessage(payload);
       setMessages((prev) => replacePendingMessage(prev, tempId, sentMessage));
+      // stop typing when message sent
+      emitTyping(false);
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
       if (onConversationUpdated) {
         onConversationUpdated({
           conversationId: activeChat.id,
@@ -226,6 +261,12 @@ function ChatArea({
           const message = res.data?.data ?? null;
           if (message) {
             setMessages((prev) => replacePendingMessage(prev, tempId, message));
+            // stop typing after fallback send
+            emitTyping(false);
+            if (typingTimeoutRef.current) {
+              clearTimeout(typingTimeoutRef.current);
+              typingTimeoutRef.current = null;
+            }
             if (onConversationUpdated) {
               onConversationUpdated({
                 conversationId: activeChat.id,
@@ -254,6 +295,20 @@ function ChatArea({
       event.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handleInputChange = (event) => {
+    setNewMessage(event.target.value);
+
+    // emit typing true immediately
+    emitTyping(true);
+
+    // debounce stop typing after 1.5s of inactivity
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      emitTyping(false);
+      typingTimeoutRef.current = null;
+    }, 1500);
   };
 
   if (!activeChat) {
@@ -442,14 +497,30 @@ function ChatArea({
               {sendError}
             </div>
           )}
-          <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
-            <textarea
-              value={newMessage}
-              onChange={(event) => setNewMessage(event.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message..."
-              rows={2}
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+              {typingUsers.length > 0 && (
+                <div style={{ color: 'rgba(148,163,184,0.85)', fontSize: '12px', marginBottom: '6px' }}>
+                  {typingUsers.length === 1
+                    ? `${typingUsers[0].name || 'Someone'} is typing...`
+                    : 'Multiple people are typing...'}
+                </div>
+              )}
+
+              <div
               style={{
+                display: "flex",
+                alignItems: "flex-end",
+                 gap: "10px",
+                }}
+               >
+              <textarea
+                value={newMessage}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+               placeholder="Type a message..."
+               rows={1.6}
+               style={{
                 width: "100%",
                 resize: "none",
                 borderRadius: "16px",
@@ -466,18 +537,20 @@ function ChatArea({
               onClick={handleSendMessage}
               style={{
                 border: "none",
-                borderRadius: "14px",
+                borderRadius: "18px",
                 background: "linear-gradient(135deg, #0ea5e9, #22d3ee)",
                 color: "#fff",
-                padding: "12px 18px",
+                padding: "9px 17px",
                 cursor: "pointer",
                 fontWeight: 700,
               }}
             >
               Send
             </button>
-          </div>
+            </div>
+            </div>
         </div>
+      </div>
       </div>
     </motion.div>
   );

@@ -36,6 +36,42 @@ export const registerChatHandlers = (io, socket) => {
     socket.leave(roomId);
   });
 
+  // Typing indicator: broadcast typing state to other room participants
+  socket.on('chat:typing', async (payload) => {
+    const { roomId, isTyping } = payload ?? {};
+    if (!roomId) return;
+
+    try {
+      const conversation = await Conversation.findById(roomId);
+      if (!conversation) return;
+
+      const isParticipant = conversation.participants.some(
+        (participant) => participant.toString() === socket.data.user.id
+      );
+      if (!isParticipant) return;
+
+      socket.to(roomId).emit('chat:typing', {
+        roomId,
+        userId: socket.data.user.id,
+        name: socket.data.user.fullName,
+        isTyping: !!isTyping,
+      });
+      // Also notify participants via their user rooms so sidebar can react
+      const conversationTypingUpdate = {
+        conversationId: roomId,
+        userId: socket.data.user.id,
+        name: socket.data.user.fullName,
+        isTyping: !!isTyping,
+      };
+
+      conversation.participants.forEach((participant) => {
+        io.to(`user:${participant.toString()}`).emit('conversation:typing', conversationTypingUpdate);
+      });
+    } catch (error) {
+      // ignore typing errors
+    }
+  });
+
   socket.on('chat:message', async (payload, callback) => {
     const { roomId, text } = payload ?? {};
 

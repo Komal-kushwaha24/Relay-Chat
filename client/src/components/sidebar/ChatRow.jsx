@@ -112,8 +112,9 @@ function ChatRow({
                 "'Inter', sans-serif",
               fontSize: "12px",
               fontWeight: 300,
-              color:
-                "rgba(100,116,139,0.7)",
+              color: chat.typing
+                ? "rgba(34,211,238,0.9)"
+                : "rgba(100,116,139,0.7)",
 
               whiteSpace: "nowrap",
               overflow: "hidden",
@@ -121,7 +122,7 @@ function ChatRow({
               flex: 1,
             }}
           >
-            {chat.msg}
+            {chat.typing ? (chat.typingNames && chat.typingNames.length > 0 ? `${chat.typingNames[0].name} is typing...` : 'Typing...') : chat.msg}
           </span>
 
           {chat.unread > 0 && (

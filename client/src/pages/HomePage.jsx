@@ -37,7 +37,7 @@ const formatTime = (value) => {
   });
 };
 
-const formatConversation = (conversation, currentUser, onlineIds = new Set()) => {
+const formatConversation = (conversation, currentUser, onlineIds = new Set(), typingMap = {}) => {
   const participants = conversation?.participants || [];
   const userId = currentUser?._id ?? currentUser?.id;
   const other = participants.find((participant) => {
@@ -50,12 +50,16 @@ const formatConversation = (conversation, currentUser, onlineIds = new Set()) =>
   const avatar = getInitials(name);
   const time = formatTime(conversation?.updatedAt || conversation?.createdAt);
 
-  return {
-    id: conversation._id || conversation.id,
+const convId = conversation._id || conversation.id;
+
+    return {
+    id: convId,
     conversation,
     otherId,
     name,
     msg: conversation.lastMessage || "No messages yet",
+    typing: Boolean(typingMap[convId]?.length),
+    typingNames: typingMap[convId] || [],
     time,
     avatar,
     color: getAvatarColor(name),
@@ -70,6 +74,7 @@ export default function HomePage() {
   const [currentUser, setCurrentUser] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const [conversationTyping, setConversationTyping] = useState({});
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const isMobile = useIsMobile(768);
@@ -120,6 +125,24 @@ export default function HomePage() {
 
     // conversation update handled by top-level handler
 
+    const handleConversationTyping = (update) => {
+      if (!update?.conversationId) return;
+      setConversationTyping((prev) => {
+        const next = { ...(prev || {}) };
+        if (update.isTyping) {
+          const arr = next[update.conversationId] || [];
+          if (!arr.some((u) => u.userId === update.userId)) {
+            next[update.conversationId] = [...arr, { userId: update.userId, name: update.name }];
+          }
+        } else {
+          const arr = (next[update.conversationId] || []).filter((u) => u.userId !== update.userId);
+          if (arr.length === 0) delete next[update.conversationId];
+          else next[update.conversationId] = arr;
+        }
+        return next;
+      });
+    };
+
     const handleConnectError = (error) => {
       console.error("Socket connection failed", error);
     };
@@ -128,6 +151,7 @@ export default function HomePage() {
     socket.on("disconnect", handleDisconnect);
     socket.on("online:users", handleOnlineUsers);
     socket.on("conversation:update", handleConversationUpdated);
+    socket.on("conversation:typing", handleConversationTyping);
     socket.on("connect_error", handleConnectError);
 
     if (currentUser) {
@@ -139,15 +163,24 @@ export default function HomePage() {
       socket.off("disconnect", handleDisconnect);
       socket.off("online:users", handleOnlineUsers);
       socket.off("conversation:update", handleConversationUpdated);
+      socket.off("conversation:typing", handleConversationTyping);
       socket.off("connect_error", handleConnectError);
       socket.disconnect();
     };
   }, [currentUser]);
 
   const sortConversations = (items = []) =>
-    [...items].sort(
-      (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)
-    );
+    [...items].sort((a, b) => {
+      const aId = a._id || a.id;
+      const bId = b._id || b.id;
+      const aTyping = Boolean(conversationTyping?.[aId]?.length);
+      const bTyping = Boolean(conversationTyping?.[bId]?.length);
+
+      if (aTyping && !bTyping) return -1;
+      if (!aTyping && bTyping) return 1;
+
+      return new Date(b.updatedAt) - new Date(a.updatedAt);
+    });
 
   const handleConversationUpdated = (update) => {
     if (!update?.conversationId) return;
@@ -203,9 +236,9 @@ export default function HomePage() {
     if (!currentUser) return [];
     const onlineIds = new Set(onlineConversationUsers.map((user) => user.id));
     return sortConversations(conversations).map((conversation) =>
-      formatConversation(conversation, currentUser, onlineIds)
+      formatConversation(conversation, currentUser, onlineIds, conversationTyping)
     );
-  }, [conversations, currentUser, onlineConversationUsers]);
+  }, [conversations, currentUser, onlineConversationUsers, conversationTyping]);
 
   const filteredChats = useMemo(() => {
     const q = search.toLowerCase();
