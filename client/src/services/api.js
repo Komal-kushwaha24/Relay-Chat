@@ -22,3 +22,45 @@ export const logCurrentUser = async () => {
     console.error(error.response?.data ?? error.message);
   }
 };
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+export const logoutUser = () =>
+  api.post('/auth/logout');
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+
+/** Returns all users except the currently logged-in user. */
+export const getUsers = () =>
+  api.get('/auth/users');
+
+// ─── Conversations ────────────────────────────────────────────────────────────
+
+/** Returns all conversations the authenticated user is part of. */
+export const getConversations = () =>
+  api.get('/conversations');
+
+/**
+ * Creates a new 1-to-1 conversation.
+ * If one already exists between the two participants it is returned instead.
+ * @param {[string, string]} participants - Array of exactly two user IDs.
+ */
+export const createConversation = (participants) =>
+  api.post('/conversations', { participants });
+
+// ─── Messages ────────────────────────────────────────────────────────────────
+
+/**
+ * Returns all messages for a conversation, sorted oldest-first.
+ * @param {string} conversationId
+ */
+export const getMessages = (conversationId) =>
+  api.get(`/messages/${conversationId}`);
+
+/**
+ * Sends a new message inside a conversation.
+ * @param {string} conversationId
+ * @param {string} text
+ */
+export const sendMessage = (conversationId, text) =>
+  api.post('/messages', { conversationId, text });

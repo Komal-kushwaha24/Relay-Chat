@@ -1,7 +1,18 @@
 import { motion, AnimatePresence } from "framer-motion";
 import SidebarContent from "./SidebarContent";
 
-function MobileDrawer({ open, onClose, active, setActive, search, setSearch, filtered }) {
+function MobileDrawer({
+  open,
+  onClose,
+  active,
+  setActive,
+  search,
+  setSearch,
+  filtered,
+  currentUser,
+  onlineUsers,
+  onUserClick,
+}) {
   return (
     <AnimatePresence>
       {open && (
@@ -57,9 +68,15 @@ function MobileDrawer({ open, onClose, active, setActive, search, setSearch, fil
             </motion.button>
  
             <SidebarContent
-              active={active} setActive={setActive}
-              search={search} setSearch={setSearch} filtered={filtered}
+              active={active}
+              setActive={setActive}
+              search={search}
+              setSearch={setSearch}
+              filtered={filtered}
               onChatSelect={onClose}
+              currentUser={currentUser}
+              onlineUsers={onlineUsers}
+              onUserClick={onUserClick}
             />
           </motion.div>
         </>
