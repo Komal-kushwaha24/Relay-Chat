@@ -118,6 +118,24 @@ export default function HomePage() {
         }))
       );
     };
+
+    const handleConversationUpdate = (update) => {
+      if (!update?.conversationId) return;
+      setConversations((prevConversations) =>
+        prevConversations.map((conversation) => {
+          const conversationId = conversation._id || conversation.id;
+          if (conversationId !== update.conversationId) {
+            return conversation;
+          }
+          return {
+            ...conversation,
+            lastMessage: update.lastMessage,
+            updatedAt: update.updatedAt,
+          };
+        })
+      );
+    };
+
     const handleConnectError = (error) => {
       console.error("Socket connection failed", error);
     };
@@ -125,6 +143,7 @@ export default function HomePage() {
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("online:users", handleOnlineUsers);
+    socket.on("conversation:update", handleConversationUpdate);
     socket.on("connect_error", handleConnectError);
 
     if (currentUser) {
@@ -135,6 +154,7 @@ export default function HomePage() {
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("online:users", handleOnlineUsers);
+      socket.off("conversation:update", handleConversationUpdate);
       socket.off("connect_error", handleConnectError);
       socket.disconnect();
     };

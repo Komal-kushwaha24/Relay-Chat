@@ -56,6 +56,8 @@ export const initSocketHandlers = (io) => {
     const user = socket.data.user;
     console.log(`Socket connected: ${socket.id} (${user.id})`);
 
+    socket.join(`user:${user.id}`);
+
     const existing = onlineUsers.get(user.id);
     if (existing) {
       existing.socketIds.add(socket.id);

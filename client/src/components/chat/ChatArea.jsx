@@ -1,9 +1,30 @@
-import { memo, useMemo, useEffect, useState } from "react";
+import { memo, useMemo, useEffect, useState, useRef } from "react";
 import { motion } from "framer-motion";
 
 import Avatar from "../common/Avatar";
 import EmptyState from "./EmptyState";
 import { getMessages, sendMessage } from "../../services/api";
+import { getSocket } from "../../services/socket";
+
+const getMessageId = (message) =>
+  message?._id?.toString?.() ?? message?.id?.toString?.();
+
+const mergeMessages = (existing = [], incoming = []) => {
+  const seen = new Set();
+  const merged = [];
+
+  [...existing, ...incoming].forEach((message) => {
+    const id = getMessageId(message);
+    if (!id || seen.has(id)) {
+      return;
+    }
+
+    seen.add(id);
+    merged.push(message);
+  });
+
+  return merged;
+};
 
 const formatTime = (value) => {
   if (!value) return "";
@@ -27,6 +48,8 @@ function ChatArea({
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [sendError, setSendError] = useState(null);
+  const socket = getSocket();
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
     if (!activeChat) {
@@ -42,7 +65,7 @@ function ChatArea({
       try {
         const res = await getMessages(activeChat.id);
         if (!mounted) return;
-        setMessages(res.data?.data ?? []);
+        setMessages((prev) => mergeMessages(prev, res.data?.data ?? []));
       } catch (err) {
         console.error("Failed to load messages", err);
       } finally {
@@ -53,7 +76,74 @@ function ChatArea({
     return () => {
       mounted = false;
     };
-  }, [activeChat]);
+  }, [activeChat?.id]);
+
+  useEffect(() => {
+    const roomId = activeChat?.id;
+    if (!roomId) return;
+
+    const handleIncomingMessage = (payload) => {
+      if (!payload || payload.roomId !== roomId || !payload.message) {
+        return;
+      }
+
+      setMessages((prev) => mergeMessages(prev, [payload.message]));
+    };
+
+    socket.emit("chat:join", roomId, (response) => {
+      if (!response?.success) {
+        console.error("Failed to join chat room", response?.message);
+      }
+    });
+
+    socket.on("chat:message", handleIncomingMessage);
+
+    return () => {
+      socket.off("chat:message", handleIncomingMessage);
+      socket.emit("chat:leave", roomId);
+    };
+  }, [activeChat?.id, socket]);
+
+  const emitChatMessage = (payload) =>
+    new Promise((resolve, reject) => {
+      if (!socket || !socket.connected) {
+        reject(new Error("Socket is not connected"));
+        return;
+      }
+
+      const timeoutId = setTimeout(() => {
+        reject(new Error("No acknowledgment from server"));
+      }, 5000);
+
+      socket.emit("chat:message", payload, (response) => {
+        clearTimeout(timeoutId);
+
+        if (!response) {
+          reject(new Error("No acknowledgment from server"));
+          return;
+        }
+
+        if (response instanceof Error) {
+          reject(response);
+          return;
+        }
+
+        if (!response.success) {
+          reject(new Error(response.message || "Failed to send message"));
+          return;
+        }
+
+        resolve(response.data);
+      });
+    });
+
+  useEffect(() => {
+    if (!activeChat) return;
+    const element = messagesEndRef.current;
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [messages, activeChat?.id]);
 
   const chatMessages = useMemo(
     () =>
@@ -75,23 +165,42 @@ function ChatArea({
     const trimmed = newMessage.trim();
     if (!trimmed || !activeChat) return;
 
-    try {
-      setSendError(null);
-      const res = await sendMessage(activeChat.id, trimmed);
-      const message = res.data?.data ?? null;
+    setSendError(null);
 
-      if (message) {
-        setMessages((prev) => [...prev, message]);
-        setNewMessage("");
-        if (onConversationUpdated) {
-          onConversationUpdated();
-        }
+    const payload = {
+      roomId: activeChat.id,
+      text: trimmed,
+    };
+
+    try {
+      const sentMessage = await emitChatMessage(payload);
+      setMessages((prev) => mergeMessages(prev, [sentMessage]));
+      setNewMessage("");
+      if (onConversationUpdated) {
+        onConversationUpdated();
       }
     } catch (err) {
-      console.error("Failed to send message", err);
-      setSendError(
-        err.response?.data?.message || err.message || "Failed to send message"
-      );
+      if (!socket?.connected) {
+        try {
+          const res = await sendMessage(activeChat.id, trimmed);
+          const message = res.data?.data ?? null;
+          if (message) {
+            setMessages((prev) => mergeMessages(prev, [message]));
+            setNewMessage("");
+            if (onConversationUpdated) {
+              onConversationUpdated();
+            }
+          }
+        } catch (apiErr) {
+          console.error("Failed to send message", apiErr);
+          setSendError(
+            apiErr.response?.data?.message || apiErr.message || err.message || "Failed to send message"
+          );
+        }
+      } else {
+        console.error("Failed to send message", err);
+        setSendError(err.message || "Failed to send message");
+      }
     }
   };
 
@@ -272,6 +381,7 @@ function ChatArea({
                 </div>
               </motion.div>
             ))}
+            <div ref={messagesEndRef} />
           </div>
         </div>
 
