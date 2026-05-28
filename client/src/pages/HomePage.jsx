@@ -8,6 +8,7 @@ import MobileTopBar from "../components/sidebar/MobileTopBar";
 
 import ChatArea from "../components/chat/ChatArea";
 import { getCurrentUser, getConversations } from "../services/api";
+import { getSocket } from "../services/socket";
 
 const getInitials = (name) => {
   if (!name) return "?";
@@ -36,7 +37,7 @@ const formatTime = (value) => {
   });
 };
 
-const formatConversation = (conversation, currentUser) => {
+const formatConversation = (conversation, currentUser, onlineIds = new Set()) => {
   const participants = conversation?.participants || [];
   const userId = currentUser?._id ?? currentUser?.id;
   const other = participants.find((participant) => {
@@ -44,6 +45,7 @@ const formatConversation = (conversation, currentUser) => {
     return participantId && participantId !== userId;
   });
 
+  const otherId = other?._id ?? other?.id ?? other?.toString?.();
   const name = other?.fullName || other?.email || "Unknown user";
   const avatar = getInitials(name);
   const time = formatTime(conversation?.updatedAt || conversation?.createdAt);
@@ -51,12 +53,13 @@ const formatConversation = (conversation, currentUser) => {
   return {
     id: conversation._id || conversation.id,
     conversation,
+    otherId,
     name,
     msg: conversation.lastMessage || "No messages yet",
     time,
     avatar,
     color: getAvatarColor(name),
-    online: false,
+    online: otherId ? onlineIds.has(otherId) : false,
     group: false,
   };
 };
@@ -66,15 +69,76 @@ export default function HomePage() {
   const [search, setSearch] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
   const [conversations, setConversations] = useState([]);
+  const [onlineUsers, setOnlineUsers] = useState([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const isMobile = useIsMobile(768);
+
+  const conversationParticipantIds = useMemo(() => {
+    if (!currentUser) return new Set();
+    const ids = new Set();
+    conversations.forEach((conversation) => {
+      (conversation?.participants || []).forEach((participant) => {
+        const id = participant?._id ?? participant?.id ?? participant?.toString?.();
+        const currentId = currentUser?._id?.toString() || currentUser?.id?.toString();
+        if (id && id !== currentId) {
+          ids.add(id.toString());
+        }
+      });
+    });
+    return ids;
+  }, [conversations, currentUser]);
+
+  const onlineConversationUsers = useMemo(() => {
+    return onlineUsers.filter((user) => conversationParticipantIds.has(user.id));
+  }, [onlineUsers, conversationParticipantIds]);
 
   useEffect(() => {
     if (!isMobile) {
       setDrawerOpen(false);
     }
   }, [isMobile]);
+
+  useEffect(() => {
+    const socket = getSocket();
+    const handleConnect = () => {
+      console.log("Socket connected");
+    };
+    const handleDisconnect = () => {
+      setOnlineUsers([]);
+    };
+    const handleOnlineUsers = (users) => {
+      const currentId = currentUser?._id?.toString() || currentUser?.id?.toString();
+      const online = Array.isArray(users) ? users.filter((user) => user.id !== currentId) : [];
+      setOnlineUsers(
+        online.map((user) => ({
+          ...user,
+          avatar: getInitials(user.name),
+          color: getAvatarColor(user.name),
+        }))
+      );
+    };
+    const handleConnectError = (error) => {
+      console.error("Socket connection failed", error);
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("online:users", handleOnlineUsers);
+    socket.on("connect_error", handleConnectError);
+
+    if (currentUser) {
+      socket.connect();
+    }
+
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("online:users", handleOnlineUsers);
+      socket.off("connect_error", handleConnectError);
+      socket.disconnect();
+    };
+  }, [currentUser]);
 
   const reloadConversations = async () => {
     try {
@@ -109,10 +173,11 @@ export default function HomePage() {
 
   const chats = useMemo(() => {
     if (!currentUser) return [];
+    const onlineIds = new Set(onlineConversationUsers.map((user) => user.id));
     return conversations.map((conversation) =>
-      formatConversation(conversation, currentUser)
+      formatConversation(conversation, currentUser, onlineIds)
     );
-  }, [conversations, currentUser]);
+  }, [conversations, currentUser, onlineConversationUsers]);
 
   const filteredChats = useMemo(() => {
     const q = search.toLowerCase();
@@ -167,6 +232,7 @@ export default function HomePage() {
             setSearch={setSearch}
             filtered={filteredChats}
             currentUser={currentUser}
+            onlineUsers={onlineConversationUsers}
           />
 
           <MobileTopBar
@@ -197,6 +263,7 @@ export default function HomePage() {
             setSearch={setSearch}
             filtered={filteredChats}
             currentUser={currentUser}
+            onlineUsers={onlineConversationUsers}
           />
 
           <div className="flex-1 overflow-hidden">

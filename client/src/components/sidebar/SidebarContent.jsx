@@ -270,7 +270,7 @@ function SidebarContent({
                 padding: "4px 0",
               }}
             >
-              No other users registered
+              No users online
             </div>
           )}
         </div>
