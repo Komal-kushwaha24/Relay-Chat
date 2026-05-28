@@ -1,7 +1,7 @@
 import {
   memo,
   useMemo,
- 
+   useState,
 } from "react";
 
 import { motion, AnimatePresence } from "framer-motion";
@@ -54,6 +54,9 @@ function SidebarContent({
   const myInitials = useMemo(() => {
     return getInitials(currentUser?.fullName);
   }, [currentUser]);
+
+  const [showNewChat, setShowNewChat] =
+  useState(false);
 
   return (
     <div
@@ -164,6 +167,27 @@ function SidebarContent({
         </div>
       </div>
 
+       <button
+         onClick={() =>
+           setShowNewChat(true)
+          }
+          style={{
+            width: "100%",
+            marginTop: "12px",
+            padding: "10px",
+            borderRadius: "12px",
+            border: "none",
+            cursor: "pointer",
+            background:
+              "linear-gradient(135deg,#0ea5e9,#22d3ee)",
+            color: "#fff",
+            fontWeight: 600,
+            fontSize: "14px",
+          }}
+        >
+          + New Chat
+        </button>
+
       {/* CHAT LIST */}
 
       <div
@@ -262,6 +286,77 @@ function SidebarContent({
           )}
         </div>
       </div>
+
+
+      {showNewChat && (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      background:
+        "rgba(0,0,0,0.5)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 999,
+    }}
+  >
+    <div
+      style={{
+        width: "320px",
+        background: "#0f172a",
+        borderRadius: "20px",
+        padding: "20px",
+        border:
+          "1px solid rgba(255,255,255,0.08)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent:
+            "space-between",
+          alignItems: "center",
+          marginBottom: "16px",
+        }}
+      >
+        <h3
+          style={{
+            color: "#fff",
+            margin: 0,
+          }}
+        >
+          Start New Chat
+        </h3>
+
+        <button
+          onClick={() =>
+            setShowNewChat(false)
+          }
+          style={{
+            background: "none",
+            border: "none",
+            color: "#94a3b8",
+            cursor: "pointer",
+            fontSize: "18px",
+          }}
+        >
+          ✕
+        </button>
+      </div>
+
+      <div
+        style={{
+          color:
+            "rgba(255,255,255,0.7)",
+          fontSize: "14px",
+        }}
+      >
+        Users list will come here
+      </div>
+    </div>
+  </div>
+)}
 
       {/* Bottom User Profile */}
       <div
