@@ -18,6 +18,7 @@ function ChatArea({
   isMobile,
   onOpenSidebar,
   currentUser,
+  conversations,
   onConversationUpdated,
   onConversationCreated,
   onExitChat,
@@ -108,6 +109,7 @@ function ChatArea({
           onOpenSidebar={onOpenSidebar}
           isMobile={isMobile}
           currentUser={currentUser}
+          conversations={conversations}
           onConversationCreated={onConversationCreated}
         />
       </div>

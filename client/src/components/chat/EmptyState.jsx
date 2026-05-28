@@ -1,8 +1,8 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { getUsers, createConversation } from "../../services/api";
 
-function EmptyState({ onOpenSidebar, isMobile, currentUser, onConversationCreated }) {
+function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], onConversationCreated }) {
   const [showUsers, setShowUsers] = useState(false);
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -32,6 +32,30 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, onConversationCreate
       await fetchUsers();
     }
   };
+
+  const currentUserId = currentUser?._id ?? currentUser?.id;
+
+  const existingParticipantIds = useMemo(() => {
+    if (!Array.isArray(conversations) || !currentUserId) return new Set();
+    const ids = new Set();
+    conversations.forEach((conversation) => {
+      (conversation?.participants || []).forEach((participant) => {
+        const id = participant?._id ?? participant?.id ?? participant?.toString?.();
+        if (id && id !== currentUserId) {
+          ids.add(id);
+        }
+      });
+    });
+    return ids;
+  }, [conversations, currentUserId]);
+
+  const availableUsers = useMemo(() => {
+    if (!Array.isArray(users)) return [];
+    return users.filter((user) => {
+      const id = user._id ?? user.id;
+      return id && !existingParticipantIds.has(id);
+    });
+  }, [users, existingParticipantIds]);
 
   const handleStartConversation = async (user) => {
     if (!currentUser?._id && !currentUser?.id) {
@@ -197,12 +221,12 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, onConversationCreate
             {loadingUsers && <div style={{ color: "rgba(148,163,184,0.8)" }}>Loading users...</div>}
             {usersError && <div style={{ color: "#f87171" }}>{usersError}</div>}
 
-            {!loadingUsers && users.length === 0 && !usersError && (
+            {!loadingUsers && availableUsers.length === 0 && !usersError && (
               <div style={{ color: "rgba(148,163,184,0.8)" }}>No users found</div>
             )}
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {users.map((user) => (
+              {availableUsers.map((user) => (
                 <div key={user._id ?? user.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.02)" }}>
                   <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                     <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#0ea5e9,#22d3ee)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700 }}>{(user.fullName || user.name || "?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>

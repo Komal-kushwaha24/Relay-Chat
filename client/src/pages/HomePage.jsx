@@ -181,6 +181,7 @@ export default function HomePage() {
               isMobile={true}
               onOpenSidebar={() => setDrawerOpen(true)}
               currentUser={currentUser}
+              conversations={conversations}
               onConversationUpdated={reloadConversations}
               onConversationCreated={handleConversationCreated}
               onExitChat={() => setActiveId(null)}
@@ -203,6 +204,7 @@ export default function HomePage() {
               activeChat={activeChat}
               isMobile={false}
               currentUser={currentUser}
+              conversations={conversations}
               onConversationUpdated={reloadConversations}
               onConversationCreated={handleConversationCreated}
               onExitChat={() => setActiveId(null)}
