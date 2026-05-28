@@ -10,6 +10,7 @@ import Avatar from "../common/Avatar";
 import SearchBar from "./SearchBar";
 import ChatRow from "./ChatRow";
 import { logoutUser } from "../../services/api";
+import { getUsers } from "../../services/api";
 
 const getInitials = (name) => {
   if (!name) return "?";
@@ -58,6 +59,31 @@ function SidebarContent({
   const [showNewChat, setShowNewChat] =
   useState(false);
 
+
+    const [users, setUsers] =
+      useState([]);
+
+    const [loadingUsers, setLoadingUsers] =
+      useState(false);
+
+const fetchUsers = async () => {
+  try {
+    setLoadingUsers(true);
+
+    const response =
+      await getUsers();
+
+    console.log(response.data);
+
+    setUsers(
+      response.data.users || []
+    );
+  } catch (error) {
+    console.error(error);
+  } finally {
+    setLoadingUsers(false);
+  }
+};
   return (
     <div
       style={{

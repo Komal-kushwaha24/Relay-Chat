@@ -88,17 +88,51 @@ export const login = async (req, res) => {
   });
 };
 
-export const getMe = (req, res) => {
-  res.status(200).json({
-    success: true,
-    data: {
-      id: req.user._id,
-      fullName: req.user.fullName,
-      email: req.user.email,
-      profilePicture: req.user.profilePicture,
-      lastSeen: req.user.lastSeen,
-    },
-  });
+export const getMe = async (req, res) => {
+  try {
+    res.status(200).json({
+      success: true,
+      user: {
+        _id: req.user._id,
+        fullName: req.user.fullName,
+        email: req.user.email,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/** Returns all users except the currently authenticated user */
+export const getUsers = async (req, res) => {
+  try {
+    const users = await User.find({ _id: { $ne: req.user._id } }).select(
+      '_id fullName email profilePicture lastSeen'
+    );
+
+    const usersList = users.map((u) => ({
+      id: u._id,
+      _id: u._id,
+      fullName: u.fullName,
+      email: u.email,
+      profilePicture: u.profilePicture,
+      lastSeen: u.lastSeen,
+    }));
+
+    res.status(200).json({
+      success: true,
+      users: usersList,
+      data: usersList,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 };
 
 export const logout = (req, res) => {

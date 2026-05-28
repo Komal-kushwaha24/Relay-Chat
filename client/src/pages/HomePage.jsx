@@ -93,6 +93,7 @@ export default function HomePage() {
               activeChat={activeChat}
               isMobile={true}
               onOpenSidebar={() => setDrawerOpen(true)}
+              currentUser={currentUser}
             />
           </div>
         </div>
@@ -111,6 +112,7 @@ export default function HomePage() {
             <ChatArea
               activeChat={activeChat}
               isMobile={false}
+              currentUser={currentUser}
             />
           </div>
         </div>

@@ -22,7 +22,7 @@ const ACTION_ICONS = [
 //   },
 ];
 
-function ChatArea({ activeChat, isMobile, onOpenSidebar }) {
+function ChatArea({ activeChat, isMobile, onOpenSidebar, currentUser }) {
   const messages = useMemo(
     () => [
       {
@@ -45,6 +45,7 @@ function ChatArea({ activeChat, isMobile, onOpenSidebar }) {
         <EmptyState
           onOpenSidebar={onOpenSidebar}
           isMobile={isMobile}
+          currentUser={currentUser}
         />
       </div>
     );
