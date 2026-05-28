@@ -13,7 +13,15 @@ const formatTime = (value) => {
   });
 };
 
-function ChatArea({ activeChat, isMobile, onOpenSidebar, currentUser, onConversationUpdated }) {
+function ChatArea({
+  activeChat,
+  isMobile,
+  onOpenSidebar,
+  currentUser,
+  onConversationUpdated,
+  onConversationCreated,
+  onExitChat,
+}) {
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState("");
@@ -100,6 +108,7 @@ function ChatArea({ activeChat, isMobile, onOpenSidebar, currentUser, onConversa
           onOpenSidebar={onOpenSidebar}
           isMobile={isMobile}
           currentUser={currentUser}
+          onConversationCreated={onConversationCreated}
         />
       </div>
     );
@@ -125,6 +134,29 @@ function ChatArea({ activeChat, isMobile, onOpenSidebar, currentUser, onConversa
             backdropFilter: "blur(12px)",
           }}
         >
+          {onExitChat && (
+            <button
+              onClick={onExitChat}
+              style={{
+                border: "none",
+                background: "rgba(255,255,255,0.06)",
+                color: "rgba(148,163,184,0.9)",
+                width: 36,
+                height: 36,
+                borderRadius: 12,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              title="Back to conversations"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+          )}
+
           <Avatar
             initials={activeChat.avatar}
             color={activeChat.color}

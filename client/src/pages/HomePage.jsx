@@ -130,10 +130,18 @@ export default function HomePage() {
 
   const handleConversationCreated = async (conversation) => {
     const id = conversation?._id || conversation?.id;
+    if (!id) return;
+
     setActiveId(id);
-    if (id) {
-      await reloadConversations();
-    }
+    setConversations((prev) => {
+      const existing = prev?.find(
+        (item) => (item._id ?? item.id) === id
+      );
+      if (existing) return prev;
+      return [conversation, ...(prev || [])];
+    });
+
+    await reloadConversations();
   };
 
   return (
@@ -159,7 +167,6 @@ export default function HomePage() {
             setSearch={setSearch}
             filtered={filteredChats}
             currentUser={currentUser}
-            onConversationCreated={handleConversationCreated}
           />
 
           <MobileTopBar
@@ -175,6 +182,8 @@ export default function HomePage() {
               onOpenSidebar={() => setDrawerOpen(true)}
               currentUser={currentUser}
               onConversationUpdated={reloadConversations}
+              onConversationCreated={handleConversationCreated}
+              onExitChat={() => setActiveId(null)}
             />
           </div>
         </div>
@@ -187,7 +196,6 @@ export default function HomePage() {
             setSearch={setSearch}
             filtered={filteredChats}
             currentUser={currentUser}
-            onConversationCreated={handleConversationCreated}
           />
 
           <div className="flex-1 overflow-hidden">
@@ -196,6 +204,8 @@ export default function HomePage() {
               isMobile={false}
               currentUser={currentUser}
               onConversationUpdated={reloadConversations}
+              onConversationCreated={handleConversationCreated}
+              onExitChat={() => setActiveId(null)}
             />
           </div>
         </div>

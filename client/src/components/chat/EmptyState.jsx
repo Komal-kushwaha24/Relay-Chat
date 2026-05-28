@@ -1,9 +1,8 @@
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { getUsers, createConversation } from "../../services/api";
 
-function EmptyState({ onOpenSidebar, isMobile, currentUser }) {
-  const [isHovered, setIsHovered] = useState(false);
+function EmptyState({ onOpenSidebar, isMobile, currentUser, onConversationCreated }) {
   const [showUsers, setShowUsers] = useState(false);
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -14,9 +13,12 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser }) {
     setUsersError(null);
     try {
       const res = await getUsers();
-      // API returns list in res.data.data or res.data
       const list = res.data?.data ?? res.data ?? [];
-      setUsers(list);
+      const currentUserId = currentUser?._id ?? currentUser?.id;
+      const filtered = Array.isArray(list)
+        ? list.filter((user) => (user._id ?? user.id) !== currentUserId)
+        : [];
+      setUsers(filtered);
     } catch (err) {
       setUsersError(err.response?.data?.message || err.message || "Failed to load users");
     } finally {
@@ -26,7 +28,9 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser }) {
 
   const handleOpenUsers = async () => {
     setShowUsers(true);
-    if (users.length === 0) await fetchUsers();
+    if (users.length === 0) {
+      await fetchUsers();
+    }
   };
 
   const handleStartConversation = async (user) => {
@@ -40,9 +44,10 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser }) {
 
     try {
       const res = await createConversation([myId, otherId]);
-      console.log("Conversation created/returned:", res.data?.data ?? res.data);
-      // Optionally, you could navigate to the conversation or update state
-      setShowUsers(false);
+      const conversation = res.data?.data ?? res.data ?? null;
+      if (conversation && onConversationCreated) {
+        onConversationCreated(conversation);
+      }
     } catch (err) {
       console.error("Failed to create conversation", err);
       alert("Failed to create conversation");

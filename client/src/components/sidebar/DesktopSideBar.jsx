@@ -10,7 +10,6 @@ function DesktopSidebar({
   currentUser,
   onlineUsers,
   onUserClick,
-  onConversationCreated,
 }) {
   return (
     <motion.div
@@ -34,7 +33,6 @@ function DesktopSidebar({
         currentUser={currentUser}
         onlineUsers={onlineUsers}
         onUserClick={onUserClick}
-        onConversationCreated={onConversationCreated}
       />
     </motion.div>
   );
