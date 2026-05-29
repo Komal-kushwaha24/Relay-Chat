@@ -7,6 +7,7 @@ import MobileDrawer from "../components/sidebar/MobileDrawer";
 import MobileTopBar from "../components/sidebar/MobileTopBar";
 
 import ChatArea from "../components/chat/ChatArea";
+import ProfilePage from "./ProfilePage";
 import { getCurrentUser, getConversations } from "../services/api";
 import { getSocket } from "../services/socket";
 
@@ -82,6 +83,10 @@ export default function HomePage() {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [conversationTyping, setConversationTyping] = useState({});
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+
+  const openProfile = () => setShowProfile(true);
+  const closeProfile = () => setShowProfile(false);
 
   const isMobile = useIsMobile(768);
 
@@ -308,6 +313,7 @@ export default function HomePage() {
             filtered={filteredChats}
             currentUser={currentUser}
             onlineUsers={onlineConversationUsers}
+            onProfileOpen={openProfile}
           />
 
           <MobileTopBar
@@ -339,6 +345,7 @@ export default function HomePage() {
             filtered={filteredChats}
             currentUser={currentUser}
             onlineUsers={onlineConversationUsers}
+            onProfileOpen={openProfile}
           />
 
           <div className="flex-1 overflow-hidden">
@@ -353,6 +360,13 @@ export default function HomePage() {
             />
           </div>
         </div>
+      )}
+
+      {showProfile && (
+        <ProfilePage
+          mode={isMobile ? "modal" : "overlay"}
+          onClose={closeProfile}
+        />
       )}
     </>
   );

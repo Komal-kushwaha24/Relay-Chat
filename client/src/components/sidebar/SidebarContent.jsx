@@ -31,6 +31,7 @@ function SidebarContent({
   currentUser,
   onlineUsers = [],
   onUserClick,
+  onProfileOpen,
 }) {
   const handleChatClick = (id) => {
     setActive(id);
@@ -280,6 +281,7 @@ function SidebarContent({
 
       {/* Bottom User Profile */}
       <div
+        onClick={onProfileOpen}
         style={{
           marginTop: "auto",
           padding: "16px",
@@ -287,6 +289,7 @@ function SidebarContent({
           display: "flex",
           alignItems: "center",
           gap: "12px",
+          cursor: onProfileOpen ? "pointer" : "default",
         }}
       >
         <div

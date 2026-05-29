@@ -10,6 +10,7 @@ function DesktopSidebar({
   currentUser,
   onlineUsers,
   onUserClick,
+  onProfileOpen,
 }) {
   return (
     <motion.div
@@ -33,6 +34,7 @@ function DesktopSidebar({
         currentUser={currentUser}
         onlineUsers={onlineUsers}
         onUserClick={onUserClick}
+        onProfileOpen={onProfileOpen}
       />
     </motion.div>
   );
