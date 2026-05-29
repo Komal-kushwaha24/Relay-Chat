@@ -228,6 +228,19 @@ export default function LoginForm() {
               />
             </motion.div>
 
+            <motion.div
+              variants={stagger.item}
+              className="mt-2 flex justify-end"
+              style={{ marginTop: 6 }}
+            >
+              <Link
+                to="/forgot-password"
+                className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
+              >
+                Forgot Password?
+              </Link>
+            </motion.div>
+
             <motion.div variants={stagger.item} style={{ marginTop: 28 }}>
               <motion.button
                 type="button"
