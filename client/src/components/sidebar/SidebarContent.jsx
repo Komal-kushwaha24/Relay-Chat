@@ -255,6 +255,7 @@ function SidebarContent({
               title={`Start chat with ${user.name}`}
             >
               <Avatar
+                src={user.profilePicture}
                 initials={user.avatar}
                 color={user.color}
                 size={32}
@@ -292,23 +293,12 @@ function SidebarContent({
           cursor: onProfileOpen ? "pointer" : "default",
         }}
       >
-        <div
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: "14px",
-            background: "linear-gradient(135deg,#0ea5e9,#22d3ee)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#fff",
-            fontWeight: 700,
-            fontFamily: "'Outfit', sans-serif",
-            boxShadow: "0 0 20px rgba(34,211,238,0.3)",
-          }}
-        >
-          {myInitials}
-        </div>
+        <Avatar
+          src={currentUser?.profilePicture}
+          initials={myInitials}
+          color="#0ea5e9"
+          size={42}
+        />
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div

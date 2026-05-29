@@ -14,6 +14,9 @@ export const loginUser = (data) =>
 export const getCurrentUser = () =>
   api.get('/auth/me');
 
+export const getCloudinarySignature = () =>
+  api.get('/cloudinary/signature');
+
 export const updateCurrentUser = (data) =>
   api.put('/auth/me', data);
 

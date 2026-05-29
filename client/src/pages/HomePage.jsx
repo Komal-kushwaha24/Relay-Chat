@@ -49,6 +49,7 @@ const formatConversation = (conversation, currentUser, onlineIds = new Set(), ty
   const otherId = other?._id ?? other?.id ?? other?.toString?.();
   const name = other?.fullName || other?.email || "Unknown user";
   const avatar = getInitials(name);
+  const avatarSrc = other?.profilePicture || null;
   const time = formatTime(conversation?.updatedAt || conversation?.createdAt);
   const convId = conversation._id || conversation.id;
   const rawUnread =
@@ -69,6 +70,7 @@ const formatConversation = (conversation, currentUser, onlineIds = new Set(), ty
     unread: Number(rawUnread),
     time,
     avatar,
+    avatarSrc,
     color: getAvatarColor(name),
     online: otherId ? onlineIds.has(otherId) : false,
     group: false,
@@ -130,6 +132,7 @@ export default function HomePage() {
           ...user,
           avatar: getInitials(user.name),
           color: getAvatarColor(user.name),
+          profilePicture: user.profilePicture || null,
         }))
       );
     };
@@ -165,15 +168,52 @@ export default function HomePage() {
     socket.on("conversation:typing", handleConversationTyping);
     socket.on('user:updated', (u) => {
       if (!u || !u.id) return;
+      const updatedId = u.id || u._id;
+
       // if the updated user is the current user, refresh local currentUser
       const curId = currentUser?._id?.toString() || currentUser?.id?.toString();
-      if (curId && (u.id === curId || u._id === curId)) {
-        setCurrentUser((prev) => ({ ...prev, fullName: u.fullName || prev.fullName, email: u.email || prev.email }));
+      if (curId && updatedId && updatedId.toString() === curId) {
+        setCurrentUser((prev) => ({
+          ...prev,
+          fullName: u.fullName || prev.fullName,
+          email: u.email || prev.email,
+          profilePicture: u.profilePicture || prev.profilePicture,
+        }));
       }
 
       // update online users list display
       setOnlineUsers((prev) =>
-        (prev || []).map((item) => (item.id === u.id ? { ...item, name: u.fullName || item.name, avatar: getInitials(u.fullName || item.name), color: getAvatarColor(u.fullName || item.name) } : item))
+        (prev || []).map((item) =>
+          item.id === updatedId
+            ? {
+                ...item,
+                name: u.fullName || item.name,
+                avatar: getInitials(u.fullName || item.name),
+                color: getAvatarColor(u.fullName || item.name),
+                profilePicture: u.profilePicture || item.profilePicture,
+              }
+            : item
+        )
+      );
+
+      // update cached conversations so avatars refresh immediately
+      setConversations((prev) =>
+        (prev || []).map((conversation) => {
+          const participants = (conversation.participants || []).map((participant) => {
+            const participantId = participant?._id ?? participant?.id ?? participant?.toString?.();
+            if (participantId && participantId.toString() === updatedId.toString()) {
+              return {
+                ...participant,
+                fullName: u.fullName || participant.fullName,
+                email: u.email || participant.email,
+                profilePicture: u.profilePicture || participant.profilePicture,
+              };
+            }
+            return participant;
+          });
+
+          return { ...conversation, participants };
+        })
       );
     });
     socket.on("connect_error", handleConnectError);

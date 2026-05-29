@@ -7,79 +7,155 @@ import TiltCard from "../components/effects/TiltCard";
 import FloatInput from "../components/auth/FloatInput";
 import AvatarZone from "../components/profile/AvatarZone";
 import InfoRow from "../components/profile/InfoRow";
-import { getCurrentUser, updateCurrentUser } from "../services/api";
+import { getCurrentUser, getCloudinarySignature, updateCurrentUser } from "../services/api";
 
 export default function ProfilePage({ mode = "page", onClose, onProfileUpdated }) {
   const [profile, setProfile] = useState({
-    name: "Komal Kushwaha",
-    email: "komal@relaychat.app",
+    name: "",
+    email: "",
+    profilePicture: null,
   });
-
-  const [draft, setDraft] = useState({ ...profile });
+  const [draft, setDraft] = useState({
+    name: "",
+    email: "",
+  });
   const [preview, setPreview] = useState(null);
+  const [pendingFile, setPendingFile] = useState(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [errors, setErrors] = useState({});
 
   const isOverlay = mode !== "page";
   const isMobileOverlay = mode === "modal";
 
-  const handleFile = (file) => {
-    setPreview(URL.createObjectURL(file));
-  };
+  useEffect(() => {
+    let mounted = true;
+
+    const loadUser = async () => {
+      try {
+        const res = await getCurrentUser();
+        const user = res.data?.user ?? res.data?.data ?? res.data ?? null;
+        if (!mounted || !user) return;
+
+        const profileData = {
+          name: user.fullName || "",
+          email: user.email || "",
+          profilePicture: user.profilePicture || null,
+        };
+
+        setProfile(profileData);
+        setDraft({ name: profileData.name, email: profileData.email });
+        setPreview(profileData.profilePicture);
+      } catch (error) {
+        console.error("Failed to load profile", error);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadUser();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const validate = () => {
     const e = {};
-    if (!draft.name || !draft.name.trim()) e.name = "Full name is required";
+    if (!draft.name.trim()) e.name = "Full name is required";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email || "")) e.email = "Enter a valid email";
+    setErrors(e);
     return e;
   };
 
-  const handleSave = () => {
-    const e = validate();
-    if (Object.keys(e).length) return;
+  const getCloudinaryUrl = async (file) => {
+    const signatureResponse = await getCloudinarySignature();
+    const data = signatureResponse.data?.data ?? signatureResponse.data;
+    if (!data) throw new Error("Invalid Cloudinary signature response");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("api_key", data.apiKey);
+    formData.append("timestamp", String(data.timestamp));
+    formData.append("signature", data.signature);
+    formData.append("folder", data.folder);
+
+    const uploadUrl = `https://api.cloudinary.com/v1_1/${data.cloudName}/image/upload`;
+    const uploadRes = await fetch(uploadUrl, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text();
+      throw new Error(`Cloudinary upload failed: ${uploadRes.status} ${errText}`);
+    }
+
+    const uploadData = await uploadRes.json();
+    return uploadData.secure_url || uploadData.url;
+  };
+
+  const handleFile = (file) => {
+    if (!file) return;
+    setPendingFile(file);
+    setPreview(URL.createObjectURL(file));
+    if (!editing) setEditing(true);
+  };
+
+  const handleSave = async () => {
+    const validationErrors = validate();
+    if (Object.keys(validationErrors).length) return;
+
     setSaving(true);
-    (async () => {
-      try {
-        const payload = { fullName: draft.name, email: draft.email };
-        const res = await updateCurrentUser(payload);
-        const updated = res.data?.user ?? res.data?.data ?? res.data ?? null;
-        if (updated) {
-          setProfile({ name: updated.fullName || updated.full_name || draft.name, email: updated.email });
-          if (onProfileUpdated) onProfileUpdated(updated);
-        }
-        setSaved(true);
-      } catch (err) {
-        console.error('Failed to update profile', err);
-      } finally {
-        setSaving(false);
-        setEditing(false);
-        setTimeout(() => setSaved(false), 2200);
+    try {
+      let profilePicture = profile.profilePicture;
+      if (pendingFile) {
+        profilePicture = await getCloudinaryUrl(pendingFile);
       }
-    })();
+
+      const payload = {
+        fullName: draft.name,
+        email: draft.email,
+        profilePicture,
+      };
+
+      const res = await updateCurrentUser(payload);
+      const updated = res.data?.user ?? res.data?.data ?? res.data ?? null;
+      if (updated) {
+        const updatedProfile = {
+          name: updated.fullName || draft.name,
+          email: updated.email,
+          profilePicture: updated.profilePicture || profilePicture,
+        };
+        setProfile(updatedProfile);
+        setDraft({ name: updatedProfile.name, email: updatedProfile.email });
+        setPreview(updatedProfile.profilePicture);
+        setPendingFile(null);
+        if (onProfileUpdated) onProfileUpdated(updated);
+      }
+      setSaved(true);
+    } catch (error) {
+      console.error("Failed to save profile", error);
+    } finally {
+      setSaving(false);
+      setEditing(false);
+      setTimeout(() => setSaved(false), 2200);
+    }
   };
 
   const handleCancel = () => {
-    setDraft({ ...profile });
-    setPreview(null);
+    setDraft({ name: profile.name, email: profile.email });
+    setPreview(profile.profilePicture);
+    setPendingFile(null);
     setEditing(false);
+    setErrors({});
   };
 
-  const setField = (key) => (e) => setDraft((p) => ({ ...p, [key]: e.target.value }));
-
-  useEffect(() => {
-    const handler = (e) => {
-      const user = e?.detail;
-      if (!user) return;
-      const name = user.fullName || user.full_name || user.name || profile.name;
-      const email = user.email || profile.email;
-      setProfile({ name, email });
-      setDraft({ name, email });
-    };
-
-    window.addEventListener('relay:userLoaded', handler);
-    return () => window.removeEventListener('relay:userLoaded', handler);
-  }, []);
+  const setField = (key) => (event) => {
+    setDraft((prev) => ({ ...prev, [key]: event.target.value }));
+  };
 
   return (
     <>
@@ -89,10 +165,6 @@ export default function ProfilePage({ mode = "page", onClose, onProfileUpdated }
           <ParticleCanvas />
         </>
       )}
-
-      {/* load current user when mounted */}
-      {/** fetch current user data on mount */}
-      <ProfileLoader/>
 
       <AnimatePresence>
         {saved && (
@@ -158,12 +230,18 @@ export default function ProfilePage({ mode = "page", onClose, onProfileUpdated }
           <TiltCard>
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}>
               <div style={{ padding: 20 }}>
-                <AvatarZone name={profile.name} preview={preview} onFile={handleFile} />
+                <AvatarZone
+                  name={profile.name}
+                  preview={preview || profile.profilePicture}
+                  onFile={handleFile}
+                />
 
-                {editing ? (
+                {loading ? (
+                  <div style={{ color: "#94a3b8", textAlign: "center" }}>Loading profile...</div>
+                ) : editing ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <FloatInput label="Full Name" id="name" value={draft.name} onChange={setField("name")} />
-                    <FloatInput label="Email" id="email" value={draft.email} onChange={setField("email")} />
+                    <FloatInput label="Full Name" id="name" value={draft.name} onChange={setField("name")} error={errors.name} />
+                    <FloatInput label="Email" id="email" value={draft.email} onChange={setField("email")} error={errors.email} />
 
                     <div style={{ display: "flex", gap: 10 }}>
                       <button onClick={handleCancel} style={{ flex: 1 }}>Cancel</button>
@@ -177,7 +255,19 @@ export default function ProfilePage({ mode = "page", onClose, onProfileUpdated }
                     <InfoRow label="Full Name" value={profile.name} />
                     <InfoRow label="Email Address" value={profile.email} />
 
-                    <button onClick={() => { setDraft({ ...profile }); setEditing(true); }} style={{ marginTop: 8 }}>
+                    {profile.profilePicture && (
+                      <div style={{ color: "#94a3b8", fontSize: 12 }}>
+                        Current avatar is loaded from Cloudinary.
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setDraft({ name: profile.name, email: profile.email });
+                        setEditing(true);
+                      }}
+                      style={{ marginTop: 8 }}
+                    >
                       Edit Profile
                     </button>
                   </div>
@@ -189,25 +279,4 @@ export default function ProfilePage({ mode = "page", onClose, onProfileUpdated }
       </div>
     </>
   );
-}
-
-function ProfileLoader(){
-  // lightweight component to fetch current user and populate ProfilePage via DOM-less approach
-  // This avoids restructuring the main component; instead we trigger a custom event with the user data.
-  useEffect(()=>{
-    let mounted=true;
-    (async()=>{
-      try{
-        const res = await getCurrentUser();
-        if(!mounted) return;
-        const user = res.data?.user ?? res.data?.data ?? res.data ?? null;
-        // dispatch a window event with user payload
-        window.dispatchEvent(new CustomEvent('relay:userLoaded',{detail:user}));
-      }catch(e){
-        console.error('Failed to load current user in ProfileLoader',e);
-      }
-    })();
-    return ()=>{ mounted=false };
-  },[]);
-  return null;
 }

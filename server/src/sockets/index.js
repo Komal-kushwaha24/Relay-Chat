@@ -14,6 +14,7 @@ const parseCookies = (cookieHeader = '') =>
 const getPublicUser = (user) => ({
   id: user.id,
   name: user.fullName || user.email || 'Unknown user',
+  profilePicture: user.profilePicture || null,
 });
 
 export const initSocketHandlers = (io) => {
@@ -44,6 +45,7 @@ export const initSocketHandlers = (io) => {
         id: user._id.toString(),
         fullName: user.fullName,
         email: user.email,
+        profilePicture: user.profilePicture || null,
       };
 
       next();

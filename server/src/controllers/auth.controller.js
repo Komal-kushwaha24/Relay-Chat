@@ -96,6 +96,7 @@ export const getMe = async (req, res) => {
         _id: req.user._id,
         fullName: req.user.fullName,
         email: req.user.email,
+        profilePicture: req.user.profilePicture || null,
       },
     });
   } catch (error) {

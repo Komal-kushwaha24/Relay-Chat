@@ -42,6 +42,7 @@ function ChatRow({
       }}
     >
       <Avatar
+        src={chat.avatarSrc}
         initials={chat.avatar}
         color={chat.color}
         size={40}
