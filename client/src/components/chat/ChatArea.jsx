@@ -100,6 +100,12 @@ function ChatArea({
         const res = await getMessages(activeChat.id);
         if (!mounted) return;
         setMessages((prev) => mergeMessages(prev, res.data?.data ?? []));
+        if (onConversationUpdated) {
+          onConversationUpdated({
+            conversationId: activeChat.id,
+            unreadCount: 0,
+          });
+        }
       } catch (err) {
         console.error("Failed to load messages", err);
       } finally {

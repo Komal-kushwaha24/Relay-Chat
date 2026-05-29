@@ -49,10 +49,15 @@ const formatConversation = (conversation, currentUser, onlineIds = new Set(), ty
   const name = other?.fullName || other?.email || "Unknown user";
   const avatar = getInitials(name);
   const time = formatTime(conversation?.updatedAt || conversation?.createdAt);
+  const convId = conversation._id || conversation.id;
+  const rawUnread =
+    conversation.unreadCount ??
+    (conversation.unreadCounts?.get
+      ? conversation.unreadCounts.get(userId)
+      : conversation.unreadCounts?.[userId]) ??
+    0;
 
-const convId = conversation._id || conversation.id;
-
-    return {
+  return {
     id: convId,
     conversation,
     otherId,
@@ -60,6 +65,7 @@ const convId = conversation._id || conversation.id;
     msg: conversation.lastMessage || "No messages yet",
     typing: Boolean(typingMap[convId]?.length),
     typingNames: typingMap[convId] || [],
+    unread: Number(rawUnread),
     time,
     avatar,
     color: getAvatarColor(name),
@@ -191,10 +197,18 @@ export default function HomePage() {
           if (conversationId !== update.conversationId) {
             return conversation;
           }
+
+          const currentId = currentUser?._id?.toString() || currentUser?.id?.toString();
+          const unreadCounts = { ...(conversation.unreadCounts || {}) };
+          if (update.unreadCount != null && currentId) {
+            unreadCounts[currentId] = update.unreadCount;
+          }
+
           return {
             ...conversation,
-            lastMessage: update.lastMessage,
-            updatedAt: update.updatedAt,
+            lastMessage: update.lastMessage ?? conversation.lastMessage,
+            updatedAt: update.updatedAt ?? conversation.updatedAt,
+            unreadCounts,
           };
         })
       )

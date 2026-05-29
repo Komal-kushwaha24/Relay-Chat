@@ -103,6 +103,16 @@ export const registerChatHandlers = (io, socket) => {
       });
 
       conversation.lastMessage = createdMessage.text;
+      conversation.unreadCounts = conversation.unreadCounts || new Map();
+      conversation.participants.forEach((participant) => {
+        const participantId = participant.toString();
+        if (participantId === socket.data.user.id) {
+          conversation.unreadCounts.set(participantId, 0);
+        } else {
+          const count = conversation.unreadCounts.get(participantId) || 0;
+          conversation.unreadCounts.set(participantId, count + 1);
+        }
+      });
       await conversation.save();
 
       const message = {
@@ -122,14 +132,16 @@ export const registerChatHandlers = (io, socket) => {
         socketId: socket.id,
       });
 
-      const conversationUpdate = {
-        conversationId: roomId,
-        lastMessage: createdMessage.text,
-        updatedAt: conversation.updatedAt,
-      };
-
       conversation.participants.forEach((participant) => {
-        io.to(`user:${participant.toString()}`).emit('conversation:update', conversationUpdate);
+        const participantId = participant.toString();
+        const conversationUpdate = {
+          conversationId: roomId,
+          lastMessage: createdMessage.text,
+          updatedAt: conversation.updatedAt,
+          unreadCount: conversation.unreadCounts?.get(participantId) || 0,
+        };
+
+        io.to(`user:${participantId}`).emit('conversation:update', conversationUpdate);
       });
 
       callback?.({ success: true, data: message });
