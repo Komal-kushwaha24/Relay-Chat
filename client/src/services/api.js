@@ -14,6 +14,9 @@ export const loginUser = (data) =>
 export const getCurrentUser = () =>
   api.get('/auth/me');
 
+export const updateCurrentUser = (data) =>
+  api.put('/auth/me', data);
+
 export const logCurrentUser = async () => {
   try {
     const response = await getCurrentUser();

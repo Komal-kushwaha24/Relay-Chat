@@ -163,6 +163,19 @@ export default function HomePage() {
     socket.on("online:users", handleOnlineUsers);
     socket.on("conversation:update", handleConversationUpdated);
     socket.on("conversation:typing", handleConversationTyping);
+    socket.on('user:updated', (u) => {
+      if (!u || !u.id) return;
+      // if the updated user is the current user, refresh local currentUser
+      const curId = currentUser?._id?.toString() || currentUser?.id?.toString();
+      if (curId && (u.id === curId || u._id === curId)) {
+        setCurrentUser((prev) => ({ ...prev, fullName: u.fullName || prev.fullName, email: u.email || prev.email }));
+      }
+
+      // update online users list display
+      setOnlineUsers((prev) =>
+        (prev || []).map((item) => (item.id === u.id ? { ...item, name: u.fullName || item.name, avatar: getInitials(u.fullName || item.name), color: getAvatarColor(u.fullName || item.name) } : item))
+      );
+    });
     socket.on("connect_error", handleConnectError);
 
     if (currentUser) {
@@ -175,6 +188,7 @@ export default function HomePage() {
       socket.off("online:users", handleOnlineUsers);
       socket.off("conversation:update", handleConversationUpdated);
       socket.off("conversation:typing", handleConversationTyping);
+      socket.off('user:updated');
       socket.off("connect_error", handleConnectError);
       socket.disconnect();
     };
@@ -366,6 +380,7 @@ export default function HomePage() {
         <ProfilePage
           mode={isMobile ? "modal" : "overlay"}
           onClose={closeProfile}
+          onProfileUpdated={(u) => setCurrentUser(u)}
         />
       )}
     </>

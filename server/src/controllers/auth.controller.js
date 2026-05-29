@@ -106,6 +106,45 @@ export const getMe = async (req, res) => {
   }
 };
 
+export const updateMe = async (req, res) => {
+  try {
+    const { fullName, email, profilePicture } = req.body;
+
+    const updates = {};
+    if (fullName != null) updates.fullName = fullName;
+    if (email != null) updates.email = email;
+    if (profilePicture != null) updates.profilePicture = profilePicture;
+
+    const updated = await User.findByIdAndUpdate(req.user._id, updates, {
+      new: true,
+      runValidators: true,
+      context: 'query',
+    }).select('-password');
+
+    // Broadcast update over sockets if available
+    try {
+      const io = req.app?.get('io');
+      if (io) {
+        const payload = {
+          id: updated._id,
+          fullName: updated.fullName,
+          email: updated.email,
+          profilePicture: updated.profilePicture,
+        };
+
+        io.emit('user:updated', payload);
+      }
+    } catch (e) {
+      // non-fatal
+      console.warn('Failed to emit user:updated', e.message || e);
+    }
+
+    res.status(200).json({ success: true, user: updated });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 /** Returns all users except the currently authenticated user */
 export const getUsers = async (req, res) => {
   try {

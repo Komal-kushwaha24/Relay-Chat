@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   getMe,
+  updateMe,
   getUsers,
   login as loginHandler,
   logout as logoutHandler,
@@ -13,6 +14,7 @@ const router = Router();
 router.post('/register', registerHandler);
 router.post('/login', loginHandler);
 router.get('/me', protect, getMe);
+router.put('/me', protect, updateMe);
 router.get('/users', protect, getUsers);
 router.post('/logout', logoutHandler);
 

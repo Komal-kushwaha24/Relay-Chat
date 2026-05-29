@@ -18,6 +18,8 @@ const startServer = async () => {
     });
 
     initSocketHandlers(io);
+    // expose io to express app so controllers can emit events
+    app.set('io', io);
 
     // Try to listen on PORT, if in use attempt the next ports up to +10
     const listenWithRetry = (server, startPort, maxTries = 10) =>

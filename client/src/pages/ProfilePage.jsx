@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import ParticleCanvas from "../components/effects/ParticleCanvas";
@@ -7,8 +7,9 @@ import TiltCard from "../components/effects/TiltCard";
 import FloatInput from "../components/auth/FloatInput";
 import AvatarZone from "../components/profile/AvatarZone";
 import InfoRow from "../components/profile/InfoRow";
+import { getCurrentUser, updateCurrentUser } from "../services/api";
 
-export default function ProfilePage({ mode = "page", onClose }) {
+export default function ProfilePage({ mode = "page", onClose, onProfileUpdated }) {
   const [profile, setProfile] = useState({
     name: "Komal Kushwaha",
     email: "komal@relaychat.app",
@@ -38,13 +39,24 @@ export default function ProfilePage({ mode = "page", onClose }) {
     const e = validate();
     if (Object.keys(e).length) return;
     setSaving(true);
-    setTimeout(() => {
-      setProfile({ ...draft });
-      setSaving(false);
-      setEditing(false);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2200);
-    }, 900);
+    (async () => {
+      try {
+        const payload = { fullName: draft.name, email: draft.email };
+        const res = await updateCurrentUser(payload);
+        const updated = res.data?.user ?? res.data?.data ?? res.data ?? null;
+        if (updated) {
+          setProfile({ name: updated.fullName || updated.full_name || draft.name, email: updated.email });
+          if (onProfileUpdated) onProfileUpdated(updated);
+        }
+        setSaved(true);
+      } catch (err) {
+        console.error('Failed to update profile', err);
+      } finally {
+        setSaving(false);
+        setEditing(false);
+        setTimeout(() => setSaved(false), 2200);
+      }
+    })();
   };
 
   const handleCancel = () => {
@@ -55,6 +67,20 @@ export default function ProfilePage({ mode = "page", onClose }) {
 
   const setField = (key) => (e) => setDraft((p) => ({ ...p, [key]: e.target.value }));
 
+  useEffect(() => {
+    const handler = (e) => {
+      const user = e?.detail;
+      if (!user) return;
+      const name = user.fullName || user.full_name || user.name || profile.name;
+      const email = user.email || profile.email;
+      setProfile({ name, email });
+      setDraft({ name, email });
+    };
+
+    window.addEventListener('relay:userLoaded', handler);
+    return () => window.removeEventListener('relay:userLoaded', handler);
+  }, []);
+
   return (
     <>
       {!isOverlay && (
@@ -63,6 +89,10 @@ export default function ProfilePage({ mode = "page", onClose }) {
           <ParticleCanvas />
         </>
       )}
+
+      {/* load current user when mounted */}
+      {/** fetch current user data on mount */}
+      <ProfileLoader/>
 
       <AnimatePresence>
         {saved && (
@@ -159,4 +189,25 @@ export default function ProfilePage({ mode = "page", onClose }) {
       </div>
     </>
   );
+}
+
+function ProfileLoader(){
+  // lightweight component to fetch current user and populate ProfilePage via DOM-less approach
+  // This avoids restructuring the main component; instead we trigger a custom event with the user data.
+  useEffect(()=>{
+    let mounted=true;
+    (async()=>{
+      try{
+        const res = await getCurrentUser();
+        if(!mounted) return;
+        const user = res.data?.user ?? res.data?.data ?? res.data ?? null;
+        // dispatch a window event with user payload
+        window.dispatchEvent(new CustomEvent('relay:userLoaded',{detail:user}));
+      }catch(e){
+        console.error('Failed to load current user in ProfileLoader',e);
+      }
+    })();
+    return ()=>{ mounted=false };
+  },[]);
+  return null;
 }
