@@ -1,4 +1,7 @@
-export default function ResetHeader() {
+export default function ResetHeader({
+  title = "Reset your password",
+  description = "Enter your email and we'll send you a secure reset link.",
+}) {
   return (
     <div style={{ marginBottom: "28px" }}>
       <h1
@@ -9,7 +12,7 @@ export default function ResetHeader() {
           marginBottom: "8px",
         }}
       >
-        Reset your password
+        {title}
       </h1>
 
       <p
@@ -19,8 +22,7 @@ export default function ResetHeader() {
           lineHeight: 1.6,
         }}
       >
-        Enter your email and we'll send you a secure
-        reset link.
+        {description}
       </p>
     </div>
   );

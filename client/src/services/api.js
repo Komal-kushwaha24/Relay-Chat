@@ -20,6 +20,15 @@ export const getCloudinarySignature = () =>
 export const updateCurrentUser = (data) =>
   api.put('/auth/me', data);
 
+export const requestPasswordReset = (data) =>
+  api.post('/auth/forgot-password', data);
+
+export const validateResetToken = (token) =>
+  api.get(`/auth/reset-password/${token}`);
+
+export const resetPassword = (token, data) =>
+  api.post(`/auth/reset-password/${token}`, data);
+
 export const logCurrentUser = async () => {
   try {
     const response = await getCurrentUser();

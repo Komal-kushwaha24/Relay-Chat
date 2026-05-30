@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 
 import FloatInput from "./FloatInput";
 import SentBanner from "./SentBanner";
+import { requestPasswordReset } from "../../services/api";
 
 export default function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
@@ -21,13 +22,14 @@ export default function ForgotPasswordForm() {
     setLoading(true);
 
     try {
-      // TODO: replace with real reset link API call
-      setTimeout(() => {
-        setLoading(false);
-        setSent(true);
-      }, 1500);
+      await requestPasswordReset({ email: email.trim().toLowerCase() });
+      setSent(true);
     } catch (err) {
-      setError("Unable to send reset link. Please try again later.");
+      setError(
+        err.response?.data?.message ||
+          "Unable to send reset link. Please try again later."
+      );
+    } finally {
       setLoading(false);
     }
   };
