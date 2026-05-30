@@ -40,7 +40,7 @@ function MobileTopBar({ onMenuOpen, activeChat, onBack }) {
       <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
         {activeChat ? (
           <>
-            <Avatar initials={activeChat.avatar} color={activeChat.color} size={32} online={activeChat.online} group={activeChat.group} />
+            <Avatar src={activeChat.avatarSrc} initials={activeChat.avatar} color={activeChat.color} size={32} online={activeChat.online} group={activeChat.group} />
             <div style={{ minWidth: 0 }}>
               <div style={{
                 fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: "14px",

@@ -308,7 +308,13 @@ function SidebarContent({
               title={`Start chat with ${user.name}`}
             >
               <Avatar
-                src={user.profilePicture}
+                src={
+                  user.profilePicture ||
+                  user.avatarSrc ||
+                  user.profilePic ||
+                  user.avatarUrl ||
+                  null
+                }
                 initials={user.avatar}
                 color={user.color}
                 size={32}
@@ -347,7 +353,13 @@ function SidebarContent({
         }}
       >
         <Avatar
-          src={currentUser?.profilePicture}
+          src={
+            currentUser?.profilePicture ||
+            currentUser?.avatarSrc ||
+            currentUser?.profilePic ||
+            currentUser?.avatarUrl ||
+            null
+          }
           initials={myInitials}
           color="#0ea5e9"
           size={42}

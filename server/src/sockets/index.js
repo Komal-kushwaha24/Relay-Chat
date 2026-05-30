@@ -25,6 +25,20 @@ export const initSocketHandlers = (io) => {
     io.emit('online:users', users);
   };
 
+  io.updateOnlineUser = (updatedUser) => {
+    const id = updatedUser?.id?.toString?.() || updatedUser?._id?.toString?.();
+    if (!id || !onlineUsers.has(id)) return;
+
+    const existing = onlineUsers.get(id);
+    onlineUsers.set(id, {
+      ...existing,
+      fullName: updatedUser.fullName || existing.fullName,
+      email: updatedUser.email || existing.email,
+      profilePicture: updatedUser.profilePicture || null,
+    });
+    broadcastOnlineUsers();
+  };
+
   io.use(async (socket, next) => {
     const cookies = parseCookies(socket.request.headers.cookie);
     const token = cookies[getAuthCookieName()];
@@ -63,11 +77,15 @@ export const initSocketHandlers = (io) => {
     const existing = onlineUsers.get(user.id);
     if (existing) {
       existing.socketIds.add(socket.id);
+      existing.fullName = user.fullName;
+      existing.email = user.email;
+      existing.profilePicture = user.profilePicture || null;
     } else {
       onlineUsers.set(user.id, {
         id: user.id,
         fullName: user.fullName,
         email: user.email,
+        profilePicture: user.profilePicture || null,
         socketIds: new Set([socket.id]),
       });
     }

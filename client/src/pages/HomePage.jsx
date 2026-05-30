@@ -130,12 +130,24 @@ export default function HomePage() {
       const currentId = currentUser?._id?.toString() || currentUser?.id?.toString();
       const online = Array.isArray(users) ? users.filter((user) => user.id !== currentId) : [];
       setOnlineUsers(
-        online.map((user) => ({
-          ...user,
-          avatar: getInitials(user.name),
-          color: getAvatarColor(user.name),
-          profilePicture: user.profilePicture || null,
-        }))
+        online.map((user) => {
+          const name = user.name || user.fullName || user.email || "Unknown user";
+          const avatarSrc =
+            user.profilePicture ||
+            user.avatarSrc ||
+            user.profilePic ||
+            user.avatarUrl ||
+            null;
+
+          return {
+            ...user,
+            name,
+            avatar: getInitials(name),
+            color: getAvatarColor(name),
+            profilePicture: avatarSrc,
+            avatarSrc,
+          };
+        })
       );
     };
 
@@ -239,6 +251,7 @@ export default function HomePage() {
                 avatar: getInitials(u.fullName || item.name),
                 color: getAvatarColor(u.fullName || item.name),
                 profilePicture: u.profilePicture || item.profilePicture,
+                avatarSrc: u.profilePicture || u.avatarSrc || item.avatarSrc || null,
               }
             : item
         )

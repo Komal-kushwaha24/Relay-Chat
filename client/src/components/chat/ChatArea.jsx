@@ -377,6 +377,7 @@ function ChatArea({
           )}
 
           <Avatar
+            src={activeChat.avatarSrc}
             initials={activeChat.avatar}
             color={activeChat.color}
             size={38}
@@ -446,14 +447,25 @@ function ChatArea({
                 transition={{ delay: index * 0.05 + 0.1 }}
                 className={`flex items-end gap-2 ${msg.isMe ? "flex-row-reverse" : ""}`}
               >
-                {!msg.isMe && (
-                  <Avatar
-                    initials={activeChat.avatar}
-                    color={activeChat.color}
-                    size={28}
-                    group={activeChat.group}
-                  />
-                )}
+                {!msg.isMe && (() => {
+                  const senderId = msg.sender?.toString?.();
+                  const participant = (activeChat.conversation?.participants || []).find((p) => {
+                    const pid = p?._id ?? p?.id ?? p?.toString?.();
+                    return pid && senderId && pid.toString() === senderId.toString();
+                  });
+                  const src = msg.profilePicture || participant?.profilePicture || activeChat.avatarSrc;
+                  const initials = participant?.fullName ? participant.fullName.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase() : activeChat.avatar;
+
+                  return (
+                    <Avatar
+                      src={src}
+                      initials={initials}
+                      color={activeChat.color}
+                      size={28}
+                      group={activeChat.group}
+                    />
+                  );
+                })()}
 
                 <div style={{ maxWidth: isMobile ? "75%" : "60%" }}>
                   <div
