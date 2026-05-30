@@ -1,8 +1,8 @@
 import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
-import { getUsers, createMessageRequest } from "../../services/api";
+import { getUsers, createMessageRequest, cancelSentMessageRequest } from "../../services/api";
 
-function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [] }) {
+function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], sentRequests = [], setSentRequests }) {
   const [showUsers, setShowUsers] = useState(false);
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -61,6 +61,17 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [] }
     });
   }, [users, existingParticipantIds]);
 
+  const sentRequestsByUserId = useMemo(() => {
+    const map = new Map();
+    (sentRequests || []).forEach((request) => {
+      const toId = request.to?._id ?? request.to?.id ?? request.to;
+      if (toId) {
+        map.set(toId.toString(), request);
+      }
+    });
+    return map;
+  }, [sentRequests]);
+
   const handleSendRequest = async (user) => {
     if (!currentUser?._id && !currentUser?.id) {
       alert("Current user not available. Please login.");
@@ -78,7 +89,20 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [] }
     setSendingRequest(true);
     setRequestNotice(null);
     try {
-      await createMessageRequest(otherId, trimmed);
+      const res = await createMessageRequest(otherId, trimmed);
+      const sentRequest = res.data?.data;
+      if (sentRequest && setSentRequests) {
+        setSentRequests((prev) => {
+          const toId = sentRequest.to?._id ?? sentRequest.to?.id ?? sentRequest.to;
+          const requestId = sentRequest._id?.toString?.() || sentRequest.id?.toString?.();
+          const next = (prev || []).filter((request) => {
+            const existingToId = request.to?._id ?? request.to?.id ?? request.to;
+            const existingRequestId = request._id?.toString?.() || request.id?.toString?.();
+            return existingRequestId !== requestId && existingToId?.toString?.() !== toId?.toString?.();
+          });
+          return [sentRequest, ...next];
+        });
+      }
       setRequestNotice({ type: "success", text: `Request sent to ${user.fullName || user.name}.` });
       setRequestText("");
       setActiveRequestUserId(null);
@@ -87,6 +111,34 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [] }
       setRequestNotice({
         type: "error",
         text: err.response?.data?.message || err.message || "Failed to send request",
+      });
+    } finally {
+      setSendingRequest(false);
+    }
+  };
+
+  const handleCancelRequest = async (request) => {
+    const requestId = request?._id || request?.id;
+    if (!requestId) return;
+
+    setSendingRequest(true);
+    setRequestNotice(null);
+    try {
+      await cancelSentMessageRequest(requestId);
+      if (setSentRequests) {
+        setSentRequests((prev) =>
+          (prev || []).filter((item) => {
+            const itemId = item._id?.toString?.() || item.id?.toString?.();
+            return itemId !== requestId.toString();
+          })
+        );
+      }
+      setRequestNotice({ type: "success", text: "Request cancelled." });
+    } catch (err) {
+      console.error("Failed to cancel request", err);
+      setRequestNotice({
+        type: "error",
+        text: err.response?.data?.message || err.message || "Failed to cancel request",
       });
     } finally {
       setSendingRequest(false);
@@ -248,6 +300,12 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [] }
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {availableUsers.map((user) => (
                 <div key={user._id ?? user.id} style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.02)" }}>
+                  {(() => {
+                    const userId = user._id ?? user.id;
+                    const sentRequest = userId ? sentRequestsByUserId.get(userId.toString()) : null;
+
+                    return (
+                      <>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0 }}>
                       <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 10, background: "linear-gradient(135deg,#0ea5e9,#22d3ee)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700 }}>{(user.fullName || user.name || "?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
@@ -257,19 +315,32 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [] }
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => {
-                        const id = user._id ?? user.id;
-                        setActiveRequestUserId((current) => current === id ? null : id);
-                        setRequestNotice(null);
-                      }}
-                      style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "rgba(34,211,238,0.12)", color: "rgba(34,211,238,0.95)", cursor: "pointer", fontWeight: 600 }}
-                    >
-                      Message
-                    </button>
+                    {sentRequest ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ color: "rgba(34,211,238,0.9)", fontSize: 12, fontWeight: 700 }}>Pending</span>
+                        <button
+                          disabled={sendingRequest}
+                          onClick={() => handleCancelRequest(sentRequest)}
+                          style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "rgba(248,113,113,0.95)", cursor: sendingRequest ? "default" : "pointer", fontWeight: 600 }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const id = user._id ?? user.id;
+                          setActiveRequestUserId((current) => current === id ? null : id);
+                          setRequestNotice(null);
+                        }}
+                        style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "rgba(34,211,238,0.12)", color: "rgba(34,211,238,0.95)", cursor: "pointer", fontWeight: 600 }}
+                      >
+                        Message
+                      </button>
+                    )}
                   </div>
 
-                  {activeRequestUserId === (user._id ?? user.id) && (
+                  {activeRequestUserId === (user._id ?? user.id) && !sentRequest && (
                     <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "flex-end" }}>
                       <textarea
                         value={requestText}
@@ -297,6 +368,9 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [] }
                       </button>
                     </div>
                   )}
+                      </>
+                    );
+                  })()}
                 </div>
               ))}
             </div>

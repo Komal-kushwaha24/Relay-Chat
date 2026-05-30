@@ -8,7 +8,7 @@ import MobileTopBar from "../components/sidebar/MobileTopBar";
 
 import ChatArea from "../components/chat/ChatArea";
 import ProfilePage from "./ProfilePage";
-import { getCurrentUser, getConversations, getMessageRequests } from "../services/api";
+import { getCurrentUser, getConversations, getMessageRequests, getSentMessageRequests } from "../services/api";
 import { getSocket } from "../services/socket";
 
 const getInitials = (name) => {
@@ -87,6 +87,7 @@ export default function HomePage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [messageRequests, setMessageRequests] = useState([]);
+  const [sentMessageRequests, setSentMessageRequests] = useState([]);
 
   const openProfile = () => setShowProfile(true);
   const closeProfile = () => setShowProfile(false);
@@ -183,7 +184,36 @@ export default function HomePage() {
       });
     };
 
+    const handleMessageRequestCancelled = (payload) => {
+      if (!payload?.requestId) return;
+      setMessageRequests((prev) =>
+        (prev || []).filter((request) => {
+          const requestId = request._id?.toString?.() || request.id?.toString?.();
+          return requestId !== payload.requestId?.toString?.();
+        })
+      );
+    };
+
+    const handleMessageRequestAccepted = async (payload) => {
+      const conversation = payload?.conversation;
+      const id = conversation?._id || conversation?.id;
+      if (!id) return;
+
+      setSentMessageRequests((prev) =>
+        (prev || []).filter((request) => {
+          const requestId = request._id?.toString?.() || request.id?.toString?.();
+          return requestId !== payload.requestId?.toString?.();
+        })
+      );
+      setConversations((prev) => {
+        const exists = (prev || []).some((item) => (item._id || item.id) === id);
+        return exists ? prev : [conversation, ...(prev || [])];
+      });
+    };
+
     socket.on('messageRequest:received', handleMessageRequestReceived);
+    socket.on('messageRequest:cancelled', handleMessageRequestCancelled);
+    socket.on('messageRequest:accepted', handleMessageRequestAccepted);
     socket.on('user:updated', (u) => {
       if (!u || !u.id) return;
       const updatedId = u.id || u._id;
@@ -243,6 +273,8 @@ export default function HomePage() {
         try {
           const res = await getMessageRequests();
           setMessageRequests(res.data?.data || []);
+          const sentRes = await getSentMessageRequests();
+          setSentMessageRequests(sentRes.data?.data || []);
         } catch {
           // ignore
         }
@@ -256,6 +288,8 @@ export default function HomePage() {
       socket.off("conversation:update", handleConversationUpdated);
       socket.off("conversation:typing", handleConversationTyping);
       socket.off('messageRequest:received', handleMessageRequestReceived);
+      socket.off('messageRequest:cancelled', handleMessageRequestCancelled);
+      socket.off('messageRequest:accepted', handleMessageRequestAccepted);
       socket.off('user:updated');
       socket.off("connect_error", handleConnectError);
       socket.disconnect();
@@ -355,22 +389,6 @@ export default function HomePage() {
     [chats, activeId]
   );
 
-  const handleConversationCreated = async (conversation) => {
-    const id = conversation?._id || conversation?.id;
-    if (!id) return;
-
-    setActiveId(id);
-    setConversations((prev) => {
-      const existing = prev?.find(
-        (item) => (item._id ?? item.id) === id
-      );
-      if (existing) return prev;
-      return sortConversations([conversation, ...(prev || [])]);
-    });
-
-    await reloadConversations();
-  };
-
   const handleOpenConversationById = async (conversationId) => {
     if (!conversationId) return;
     setActiveId(conversationId);
@@ -435,7 +453,8 @@ export default function HomePage() {
               currentUser={currentUser}
               conversations={conversations}
               onConversationUpdated={handleConversationUpdated}
-              onConversationCreated={handleConversationCreated}
+              sentRequests={sentMessageRequests}
+              setSentRequests={setSentMessageRequests}
               onExitChat={() => setActiveId(null)}
             />
           </div>
@@ -465,7 +484,8 @@ export default function HomePage() {
               currentUser={currentUser}
               conversations={conversations}
               onConversationUpdated={handleConversationUpdated}
-              onConversationCreated={handleConversationCreated}
+              sentRequests={sentMessageRequests}
+              setSentRequests={setSentMessageRequests}
               onExitChat={() => setActiveId(null)}
             />
           </div>

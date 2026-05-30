@@ -84,8 +84,14 @@ export const sendMessage = (conversationId, text) =>
 export const getMessageRequests = () =>
   api.get('/messages/requests');
 
+export const getSentMessageRequests = () =>
+  api.get('/messages/requests/sent');
+
 export const createMessageRequest = (toUserId, text) =>
   api.post('/messages/requests', { toUserId, text });
+
+export const cancelSentMessageRequest = (requestId) =>
+  api.delete(`/messages/requests/sent/${requestId}`);
 
 export const acceptMessageRequest = (requestId) =>
   api.post(`/messages/requests/${requestId}/accept`);
