@@ -18,10 +18,54 @@ const startServer = async () => {
     });
 
     initSocketHandlers(io);
+    // expose io to express app so controllers can emit events
+    app.set('io', io);
 
-    httpServer.listen(PORT, () => {
-      console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-    });
+    // Try to listen on PORT, if in use attempt the next ports up to +10
+    const listenWithRetry = (server, startPort, maxTries = 10) =>
+      new Promise((resolve, reject) => {
+        let port = Number(startPort) || 5000;
+        let attempts = 0;
+
+        const attempt = () => {
+          const onError = (err) => {
+            cleanup();
+            if (err && err.code === 'EADDRINUSE' && attempts < maxTries) {
+              console.warn(`Port ${port} in use, trying ${port + 1}`);
+              attempts += 1;
+              port += 1;
+              // small delay before retrying
+              setTimeout(attempt, 150);
+              return;
+            }
+            reject(err);
+          };
+
+          const onListening = () => {
+            cleanup();
+            resolve(port);
+          };
+
+          function cleanup() {
+            server.removeListener('error', onError);
+            server.removeListener('listening', onListening);
+          }
+
+          server.once('error', onError);
+          server.once('listening', onListening);
+          server.listen(port);
+        };
+
+        attempt();
+      });
+
+    try {
+      const boundPort = await listenWithRetry(httpServer, PORT, 10);
+      console.log(`Server running in ${process.env.NODE_ENV} mode on port ${boundPort}`);
+    } catch (err) {
+      console.error('Failed to bind server port:', err.message || err);
+      process.exit(1);
+    }
   } catch (error) {
     console.error('Failed to start server:', error.message);
     process.exit(1);

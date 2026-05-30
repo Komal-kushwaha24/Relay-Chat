@@ -1,7 +1,5 @@
 import { motion } from "framer-motion";
 import Avatar from "../common/Avatar";
-import { CHATS } from "../../data/chats";
-
 
 function MobileTopBar({ onMenuOpen, activeChat, onBack }) {
   return (
@@ -81,36 +79,28 @@ function MobileTopBar({ onMenuOpen, activeChat, onBack }) {
       {/* Right action */}
       {activeChat ? (
         <div style={{ display: "flex", gap: "6px" }}>
-          {[
-            <path key="phone" d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.67A2 2 0 012 .14h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 14.92z" />,
-          ].map((icon, i) => (
-            <motion.button key={i} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.93 }}
-              style={{
-                width: 32, height: 32, borderRadius: "9px",
-                border: "1px solid rgba(255,255,255,0.07)",
-                background: "rgba(255,255,255,0.04)", cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: "rgba(100,116,139,0.6)",
-              }}>
-              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">{icon}</svg>
-            </motion.button>
-          ))}
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.93 }}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "9px",
+              border: "1px solid rgba(255,255,255,0.07)",
+              background: "rgba(255,255,255,0.04)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "rgba(100,116,139,0.6)",
+            }}
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.67A2 2 0 012 .14h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 14.92z" />
+            </svg>
+          </motion.button>
         </div>
-      ) : (
-        /* Unread badge pill */
-        (() => {
-          const total = CHATS.reduce((s, c) => s + c.unread, 0);
-          return total > 0 ? (
-            <div style={{
-              padding: "3px 10px", borderRadius: "20px",
-              background: "linear-gradient(135deg, #0ea5e9, #22d3ee)",
-              boxShadow: "0 0 10px rgba(34,211,238,0.4)",
-              fontFamily: "'Outfit', sans-serif", fontWeight: 700,
-              fontSize: "11px", color: "#fff",
-            }}>{total}</div>
-          ) : null;
-        })()
-      )}
+      ) : null}
     </div>
   );
 }

@@ -1,11 +1,13 @@
 import { memo } from "react";
 
 function Avatar({
+  src,
   initials,
   color,
   size = 36,
   online,
   group,
+  alt = "avatar",
 }) {
   return (
     <div
@@ -16,27 +18,42 @@ function Avatar({
         height: size,
       }}
     >
-      <div
-        style={{
-          width: size,
-          height: size,
-          borderRadius: group ? "10px" : "50%",
-          background: `linear-gradient(135deg, ${color}cc, ${color}55)`,
-          border: `1px solid ${color}44`,
-          boxShadow: `0 0 10px ${color}33`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: "'Outfit', sans-serif",
-          fontWeight: 700,
-          fontSize: size * 0.33 + "px",
-          color: "#fff",
-          letterSpacing: "-0.02em",
-          userSelect: "none",
-        }}
-      >
-        {initials}
-      </div>
+      {src ? (
+        <img
+          src={src}
+          alt={alt}
+          style={{
+            width: size,
+            height: size,
+            borderRadius: group ? "10px" : "50%",
+            objectFit: "cover",
+            border: `1px solid ${color}44`,
+            boxShadow: `0 0 10px ${color}33`,
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            width: size,
+            height: size,
+            borderRadius: group ? "10px" : "50%",
+            background: `linear-gradient(135deg, ${color}cc, ${color}55)`,
+            border: `1px solid ${color}44`,
+            boxShadow: `0 0 10px ${color}33`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "'Outfit', sans-serif",
+            fontWeight: 700,
+            fontSize: size * 0.33 + "px",
+            color: "#fff",
+            letterSpacing: "-0.02em",
+            userSelect: "none",
+          }}
+        >
+          {initials}
+        </div>
+      )}
 
       {online && !group && (
         <div

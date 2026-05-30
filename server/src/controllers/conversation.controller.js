@@ -36,6 +36,10 @@ export const createConversation = async (req, res) => {
 
     const conversation = await Conversation.create({
       participants,
+      unreadCounts: participants.reduce((map, id) => {
+        map[id] = 0;
+        return map;
+      }, {}),
     });
 
     res.status(201).json({

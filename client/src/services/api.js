@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5002',
   withCredentials: true,
 });
 
@@ -13,6 +13,21 @@ export const loginUser = (data) =>
 
 export const getCurrentUser = () =>
   api.get('/auth/me');
+
+export const getCloudinarySignature = () =>
+  api.get('/cloudinary/signature');
+
+export const updateCurrentUser = (data) =>
+  api.put('/auth/me', data);
+
+export const requestPasswordReset = (data) =>
+  api.post('/auth/forgot-password', data);
+
+export const validateResetToken = (token) =>
+  api.get(`/auth/reset-password/${token}`);
+
+export const resetPassword = (token, data) =>
+  api.post(`/auth/reset-password/${token}`, data);
 
 export const logCurrentUser = async () => {
   try {

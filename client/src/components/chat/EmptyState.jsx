@@ -1,8 +1,82 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { getUsers, createConversation } from "../../services/api";
 
-function EmptyState({ onOpenSidebar, isMobile }) {
-  const [isHovered, setIsHovered] = useState(false);
+function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], onConversationCreated }) {
+  const [showUsers, setShowUsers] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [usersError, setUsersError] = useState(null);
+
+  const fetchUsers = async () => {
+    setLoadingUsers(true);
+    setUsersError(null);
+    try {
+      const res = await getUsers();
+      const list = res.data?.data ?? res.data ?? [];
+      const currentUserId = currentUser?._id ?? currentUser?.id;
+      const filtered = Array.isArray(list)
+        ? list.filter((user) => (user._id ?? user.id) !== currentUserId)
+        : [];
+      setUsers(filtered);
+    } catch (err) {
+      setUsersError(err.response?.data?.message || err.message || "Failed to load users");
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleOpenUsers = async () => {
+    setShowUsers(true);
+    if (users.length === 0) {
+      await fetchUsers();
+    }
+  };
+
+  const currentUserId = currentUser?._id ?? currentUser?.id;
+
+  const existingParticipantIds = useMemo(() => {
+    if (!Array.isArray(conversations) || !currentUserId) return new Set();
+    const ids = new Set();
+    conversations.forEach((conversation) => {
+      (conversation?.participants || []).forEach((participant) => {
+        const id = participant?._id ?? participant?.id ?? participant?.toString?.();
+        if (id && id !== currentUserId) {
+          ids.add(id);
+        }
+      });
+    });
+    return ids;
+  }, [conversations, currentUserId]);
+
+  const availableUsers = useMemo(() => {
+    if (!Array.isArray(users)) return [];
+    return users.filter((user) => {
+      const id = user._id ?? user.id;
+      return id && !existingParticipantIds.has(id);
+    });
+  }, [users, existingParticipantIds]);
+
+  const handleStartConversation = async (user) => {
+    if (!currentUser?._id && !currentUser?.id) {
+      alert("Current user not available. Please login.");
+      return;
+    }
+
+    const myId = currentUser._id ?? currentUser.id;
+    const otherId = user._id ?? user.id;
+
+    try {
+      const res = await createConversation([myId, otherId]);
+      const conversation = res.data?.data ?? res.data ?? null;
+      if (conversation && onConversationCreated) {
+        onConversationCreated(conversation);
+      }
+    } catch (err) {
+      console.error("Failed to create conversation", err);
+      alert("Failed to create conversation");
+    }
+  };
 
   return (
     <div style={{
@@ -104,6 +178,7 @@ function EmptyState({ onOpenSidebar, isMobile }) {
             boxShadow: "0 0 20px rgba(34,211,238,0.25)",
             display: "flex", alignItems: "center", gap: "7px",
           }}
+          onClick={handleOpenUsers}
         >
           <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -111,6 +186,65 @@ function EmptyState({ onOpenSidebar, isMobile }) {
           New Conversation
         </motion.button>
       </div>
+
+      {showUsers && (
+        <div
+          onClick={() => setShowUsers(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 60,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(90vw, 520px)",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              borderRadius: "12px",
+              padding: "18px",
+              background: "linear-gradient(180deg, rgba(6,10,20,0.98), rgba(7,12,22,0.98))",
+              border: "1px solid rgba(255,255,255,0.04)",
+              boxShadow: "0 10px 40px rgba(2,6,23,0.6)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, color: "#e2e8f0", fontFamily: "'Outfit', sans-serif" }}>Select a user</div>
+              <button onClick={() => setShowUsers(false)} style={{ border: "none", background: "transparent", color: "rgba(148,163,184,0.8)", cursor: "pointer" }}>Close</button>
+            </div>
+
+            {loadingUsers && <div style={{ color: "rgba(148,163,184,0.8)" }}>Loading users...</div>}
+            {usersError && <div style={{ color: "#f87171" }}>{usersError}</div>}
+
+            {!loadingUsers && availableUsers.length === 0 && !usersError && (
+              <div style={{ color: "rgba(148,163,184,0.8)" }}>No users found</div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {availableUsers.map((user) => (
+                <div key={user._id ?? user.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.02)" }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#0ea5e9,#22d3ee)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700 }}>{(user.fullName || user.name || "?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
+                    <div>
+                      <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{user.fullName || user.name}</div>
+                      <div style={{ color: "rgba(148,163,184,0.7)", fontSize: 12 }}>{user.email}</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <button onClick={() => handleStartConversation(user)} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "rgba(34,211,238,0.12)", color: "rgba(34,211,238,0.95)", cursor: "pointer", fontWeight: 600 }}>Start</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

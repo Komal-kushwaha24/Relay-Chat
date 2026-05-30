@@ -1,43 +1,321 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useEffect, useState, useRef } from "react";
 import { motion } from "framer-motion";
 
 import Avatar from "../common/Avatar";
 import EmptyState from "./EmptyState";
+import { getMessages, sendMessage } from "../../services/api";
+import { getSocket } from "../../services/socket";
 
-const ACTION_ICONS = [
-//   {
-//     id: "phone",
-//     icon: (
-//       <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.67A2 2 0 012 .14h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 14.92z" />
-//     ),
-//   },
-//   {
-//     id: "video",
-//     icon: (
-//       <>
-//         <circle cx="23" cy="7" r="4" />
-//         <path d="M17 3H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2z" />
-//       </>
-//     ),
-//   },
-];
+const getMessageId = (message) =>
+  message?.tempId?.toString?.() ??
+  message?._id?.toString?.() ??
+  message?.id?.toString?.();
 
-function ChatArea({ activeChat, isMobile, onOpenSidebar }) {
-  const messages = useMemo(
-    () => [
-      {
-        from: "them",
-        text: activeChat?.msg,
-        time: `${activeChat?.time} ago`,
-      },
-      {
-        from: "me",
-        text: "Got it! Let me take a look 👀",
-        time: "just now",
-      },
-    ],
-    [activeChat]
+const mergeMessages = (existing = [], incoming = []) => {
+  const seen = new Set();
+  const merged = [];
+
+  [...existing, ...incoming].forEach((message) => {
+    const id = getMessageId(message);
+    if (!id || seen.has(id)) {
+      return;
+    }
+
+    seen.add(id);
+    merged.push(message);
+  });
+
+  return merged;
+};
+
+const replacePendingMessage = (existing = [], tempId, incoming) => {
+  if (!tempId) {
+    return mergeMessages(existing, [incoming]);
+  }
+
+  let replaced = false;
+  const updated = existing.map((message) => {
+    if (message.tempId === tempId) {
+      replaced = true;
+      return incoming;
+    }
+    return message;
+  });
+
+  if (replaced) {
+    return mergeMessages(updated, []);
+  }
+
+  return mergeMessages(existing, [incoming]);
+};
+
+const formatTime = (value) => {
+  if (!value) return "";
+  return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+function ChatArea({
+  activeChat,
+  isMobile,
+  onOpenSidebar,
+  currentUser,
+  conversations,
+  onConversationUpdated,
+  onConversationCreated,
+  onExitChat,
+}) {
+  const [messages, setMessages] = useState([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [newMessage, setNewMessage] = useState("");
+  const [sendError, setSendError] = useState(null);
+  const socket = getSocket();
+  const messagesEndRef = useRef(null);
+  const [typingUsers, setTypingUsers] = useState([]);
+  const typingTimeoutRef = useRef(null);
+
+  const emitTyping = (isTyping) => {
+    try {
+      if (!socket || !socket.connected || !activeChat) return;
+      socket.emit('chat:typing', { roomId: activeChat.id, isTyping });
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (!activeChat) {
+      setMessages([]);
+      return;
+    }
+
+    let mounted = true;
+    setLoadingMessages(true);
+    setMessages([]);
+
+    (async () => {
+      try {
+        const res = await getMessages(activeChat.id);
+        if (!mounted) return;
+        setMessages((prev) => mergeMessages(prev, res.data?.data ?? []));
+        if (onConversationUpdated) {
+          onConversationUpdated({
+            conversationId: activeChat.id,
+            unreadCount: 0,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load messages", err);
+      } finally {
+        if (mounted) setLoadingMessages(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeChat?.id]);
+
+  useEffect(() => {
+    const roomId = activeChat?.id;
+    if (!roomId) return;
+
+    const handleIncomingMessage = (payload) => {
+      if (!payload || payload.roomId !== roomId || !payload.message) {
+        return;
+      }
+
+      setMessages((prev) => mergeMessages(prev, [payload.message]));
+    };
+
+    const handleIncomingTyping = (payload) => {
+      if (!payload || payload.roomId !== roomId) return;
+      const { userId, name, isTyping } = payload;
+      const myId = currentUser?._id?.toString?.() || currentUser?.id?.toString?.();
+      if (!userId || userId === myId) return;
+
+      setTypingUsers((prev) => {
+        if (isTyping) {
+          if (prev.some((u) => u.userId === userId)) return prev;
+          return [...prev, { userId, name }];
+        }
+        return prev.filter((u) => u.userId !== userId);
+      });
+    };
+
+    socket.emit("chat:join", roomId, (response) => {
+      if (!response?.success) {
+        console.error("Failed to join chat room", response?.message);
+      }
+    });
+
+    socket.on("chat:message", handleIncomingMessage);
+    socket.on("chat:typing", handleIncomingTyping);
+
+    return () => {
+      socket.off("chat:message", handleIncomingMessage);
+      socket.off("chat:typing", handleIncomingTyping);
+      setTypingUsers([]);
+      socket.emit("chat:leave", roomId);
+    };
+  }, [activeChat?.id, socket]);
+
+  const emitChatMessage = (payload) =>
+    new Promise((resolve, reject) => {
+      if (!socket || !socket.connected) {
+        reject(new Error("Socket is not connected"));
+        return;
+      }
+
+      const timeoutId = setTimeout(() => {
+        reject(new Error("No acknowledgment from server"));
+      }, 5000);
+
+      socket.emit("chat:message", payload, (response) => {
+        clearTimeout(timeoutId);
+
+        if (!response) {
+          reject(new Error("No acknowledgment from server"));
+          return;
+        }
+
+        if (response instanceof Error) {
+          reject(response);
+          return;
+        }
+
+        if (!response.success) {
+          reject(new Error(response.message || "Failed to send message"));
+          return;
+        }
+
+        resolve(response.data);
+      });
+    });
+
+  useEffect(() => {
+    if (!activeChat) return;
+    const element = messagesEndRef.current;
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [messages, activeChat?.id]);
+
+  const chatMessages = useMemo(
+    () =>
+      messages.map((msg) => {
+        const isMe =
+          msg.sender?.toString()?.trim() ===
+          currentUser?._id?.toString()?.trim();
+
+        return {
+          ...msg,
+          isMe,
+          time: formatTime(msg.createdAt),
+        };
+      }),
+    [messages, currentUser]
   );
+
+  const handleSendMessage = async () => {
+    const trimmed = newMessage.trim();
+    if (!trimmed || !activeChat) return;
+
+    setSendError(null);
+
+    const payload = {
+      roomId: activeChat.id,
+      text: trimmed,
+    };
+
+    const tempId = `pending-${Date.now()}`;
+    const pendingMessage = {
+      _id: tempId,
+      tempId,
+      sender: currentUser?._id?.toString?.() || currentUser?.id?.toString?.(),
+      conversation: activeChat.id,
+      text: trimmed,
+      createdAt: new Date().toISOString(),
+      pending: true,
+    };
+
+    setMessages((prev) => mergeMessages(prev, [pendingMessage]));
+    setNewMessage("");
+
+    try {
+      const sentMessage = await emitChatMessage(payload);
+      setMessages((prev) => replacePendingMessage(prev, tempId, sentMessage));
+      // stop typing when message sent
+      emitTyping(false);
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      if (onConversationUpdated) {
+        onConversationUpdated({
+          conversationId: activeChat.id,
+          lastMessage: sentMessage.text,
+          updatedAt: sentMessage.createdAt || new Date().toISOString(),
+        });
+      }
+    } catch (err) {
+      if (!socket?.connected) {
+        try {
+          const res = await sendMessage(activeChat.id, trimmed);
+          const message = res.data?.data ?? null;
+          if (message) {
+            setMessages((prev) => replacePendingMessage(prev, tempId, message));
+            // stop typing after fallback send
+            emitTyping(false);
+            if (typingTimeoutRef.current) {
+              clearTimeout(typingTimeoutRef.current);
+              typingTimeoutRef.current = null;
+            }
+            if (onConversationUpdated) {
+              onConversationUpdated({
+                conversationId: activeChat.id,
+                lastMessage: message.text,
+                updatedAt: message.createdAt || new Date().toISOString(),
+              });
+            }
+          }
+        } catch (apiErr) {
+          console.error("Failed to send message", apiErr);
+          setMessages((prev) => prev.filter((msg) => msg.tempId !== tempId));
+          setSendError(
+            apiErr.response?.data?.message || apiErr.message || err.message || "Failed to send message"
+          );
+        }
+      } else {
+        console.error("Failed to send message", err);
+        setMessages((prev) => prev.filter((msg) => msg.tempId !== tempId));
+        setSendError(err.message || "Failed to send message");
+      }
+    }
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const handleInputChange = (event) => {
+    setNewMessage(event.target.value);
+
+    // emit typing true immediately
+    emitTyping(true);
+
+    // debounce stop typing after 1.5s of inactivity
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      emitTyping(false);
+      typingTimeoutRef.current = null;
+    }, 1500);
+  };
 
   if (!activeChat) {
     return (
@@ -45,6 +323,9 @@ function ChatArea({ activeChat, isMobile, onOpenSidebar }) {
         <EmptyState
           onOpenSidebar={onOpenSidebar}
           isMobile={isMobile}
+          currentUser={currentUser}
+          conversations={conversations}
+          onConversationCreated={onConversationCreated}
         />
       </div>
     );
@@ -61,16 +342,38 @@ function ChatArea({ activeChat, isMobile, onOpenSidebar }) {
       }}
       className="flex h-full flex-1 flex-col overflow-hidden"
     >
-      {/* Desktop Header */}
       {!isMobile && (
         <div
-          className="flex items-center gap-3 border-b px-6 py-[14px]"
+          className="flex items-center gap-3 border-b px-6 py-3.5"
           style={{
             borderColor: "rgba(255,255,255,0.05)",
             background: "rgba(7,18,40,0.5)",
             backdropFilter: "blur(12px)",
           }}
         >
+          {onExitChat && (
+            <button
+              onClick={onExitChat}
+              style={{
+                border: "none",
+                background: "rgba(255,255,255,0.06)",
+                color: "rgba(148,163,184,0.9)",
+                width: 36,
+                height: 36,
+                borderRadius: 12,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              title="Back to conversations"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+          )}
+
           <Avatar
             initials={activeChat.avatar}
             color={activeChat.color}
@@ -101,105 +404,47 @@ function ChatArea({ activeChat, isMobile, onOpenSidebar }) {
                   : "rgba(100,116,139,0.5)",
               }}
             >
-              {activeChat.online
-                ? activeChat.group
-                  ? "4 members online"
-                  : "Active now"
-                : "Offline"}
+              {activeChat.online ? "Active now" : "Offline"}
             </div>
-          </div>
-
-          <div className="flex gap-2">
-            {ACTION_ICONS.map((item) => (
-              <motion.button
-                key={item.id}
-                whileHover={{
-                  scale: 1.1,
-                  color: "rgba(34,211,238,0.9)",
-                }}
-                whileTap={{ scale: 0.95 }}
-                className="flex h-8 w-8 items-center justify-center rounded-[9px]"
-                style={{
-                  border: "1px solid rgba(255,255,255,0.07)",
-                  background: "rgba(255,255,255,0.04)",
-                  color: "rgba(100,116,139,0.6)",
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  viewBox="0 0 24 24"
-                >
-                  {item.icon}
-                </svg>
-              </motion.button>
-            ))}
           </div>
         </div>
       )}
 
-      {/* Messages */}
       <div
-        className="flex flex-1 flex-col overflow-y-auto"
-        style={{
-          padding: isMobile ? "16px 14px" : "24px",
-          scrollbarWidth: "none",
-        }}
+        className="flex flex-1 flex-col overflow-hidden"
+        style={{ background: "rgba(7,18,40,0.98)" }}
       >
-        {/* THIS FIXES BOTTOM STICK */}
-        <div className="mt-auto flex flex-col gap-4">
-          
-          {/* Date Divider */}
-          <div className="my-2 flex items-center gap-3">
-            <div
-              className="flex-1"
-              style={{
-                height: "1px",
-                background: "rgba(255,255,255,0.05)",
-              }}
-            />
+        <div
+          className="flex-1 overflow-y-auto"
+          style={{ padding: isMobile ? "16px 14px" : "24px", scrollbarWidth: "none" }}
+        >
+          {loadingMessages && (
+            <div style={{ color: "rgba(148,163,184,0.8)" }}>Loading messages...</div>
+          )}
 
-            <span
+          {!loadingMessages && chatMessages.length === 0 && (
+            <div
               style={{
+                color: "rgba(148,163,184,0.8)",
+                marginTop: "24px",
+                textAlign: "center",
                 fontFamily: "'Inter', sans-serif",
-                fontSize: "11px",
-                color: "rgba(100,116,139,0.45)",
-                padding: "3px 10px",
-                borderRadius: "20px",
-                border: "1px solid rgba(255,255,255,0.06)",
-                background: "rgba(255,255,255,0.02)",
               }}
             >
-              Today
-            </span>
+              No messages yet. Send the first message to start the conversation.
+            </div>
+          )}
 
-            <div
-              className="flex-1"
-              style={{
-                height: "1px",
-                background: "rgba(255,255,255,0.05)",
-              }}
-            />
-          </div>
-
-          {/* Messages */}
-          {messages.map((msg, i) => {
-            const isMe = msg.from === "me";
-
-            return (
+          <div className="flex flex-col gap-4">
+            {chatMessages.map((msg, index) => (
               <motion.div
-                key={i}
+                key={msg._id ?? index}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 + 0.2 }}
-                className={`flex items-end gap-2 ${
-                  isMe ? "flex-row-reverse" : ""
-                }`}
+                transition={{ delay: index * 0.05 + 0.1 }}
+                className={`flex items-end gap-2 ${msg.isMe ? "flex-row-reverse" : ""}`}
               >
-                {!isMe && (
+                {!msg.isMe && (
                   <Avatar
                     initials={activeChat.avatar}
                     color={activeChat.color}
@@ -208,29 +453,19 @@ function ChatArea({ activeChat, isMobile, onOpenSidebar }) {
                   />
                 )}
 
-                <div
-                  style={{
-                    maxWidth: isMobile ? "75%" : "60%",
-                  }}
-                >
+                <div style={{ maxWidth: isMobile ? "75%" : "60%" }}>
                   <div
                     style={{
                       padding: "10px 14px",
-                      borderRadius: isMe
-                        ? "16px 16px 4px 16px"
-                        : "16px 16px 16px 4px",
-                      background: isMe
+                      borderRadius: msg.isMe ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                      background: msg.isMe
                         ? "linear-gradient(135deg, #0ea5e9, #0891b2)"
                         : "rgba(255,255,255,0.06)",
-                      border: isMe
-                        ? "none"
-                        : "1px solid rgba(255,255,255,0.07)",
-                      boxShadow: isMe
-                        ? "0 0 16px rgba(14,165,233,0.25)"
-                        : "none",
+                      border: msg.isMe ? "none" : "1px solid rgba(255,255,255,0.07)",
+                      boxShadow: msg.isMe ? "0 0 16px rgba(14,165,233,0.25)" : "none",
                       fontFamily: "'Inter', sans-serif",
                       fontSize: isMobile ? "13px" : "13.5px",
-                      color: isMe ? "#fff" : "#cbd5e1",
+                      color: msg.isMe ? "#fff" : "#cbd5e1",
                       fontWeight: 300,
                       lineHeight: 1.5,
                     }}
@@ -244,144 +479,84 @@ function ChatArea({ activeChat, isMobile, onOpenSidebar }) {
                       fontSize: "10px",
                       color: "rgba(100,116,139,0.45)",
                       marginTop: "4px",
-                      textAlign: isMe ? "right" : "left",
+                      textAlign: msg.isMe ? "right" : "left",
                     }}
                   >
                     {msg.time}
                   </div>
                 </div>
               </motion.div>
-            );
-          })}
-
-          {/* Typing */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.7 }}
-            className="flex items-end gap-2"
-          >
-            <Avatar
-              initials={activeChat.avatar}
-              color={activeChat.color}
-              size={28}
-              group={activeChat.group}
-            />
-
-            <div
-              className="flex items-center gap-1"
-              style={{
-                padding: "10px 14px",
-                borderRadius: "16px 16px 16px 4px",
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.07)",
-              }}
-            >
-              {[0, 1, 2].map((i) => (
-                <motion.div
-                  key={i}
-                  animate={{ y: [0, -4, 0] }}
-                  transition={{
-                    duration: 0.6,
-                    repeat: Infinity,
-                    delay: i * 0.15,
-                  }}
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: "rgba(34,211,238,0.6)",
-                  }}
-                />
-              ))}
-            </div>
-          </motion.div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
-      </div>
 
-      {/* Input */}
-      <div
-        style={{
-          padding: isMobile ? "10px 12px" : "14px 20px",
-          borderTop: "1px solid rgba(255,255,255,0.05)",
-          background: "rgba(7,18,40,0.6)",
-          flexShrink: 0,
-        }}
-      >
         <div
-          className="flex items-center gap-[10px]"
           style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: "16px",
-            padding: "8px 10px 8px 16px",
+            borderTop: "1px solid rgba(255,255,255,0.08)",
+            padding: isMobile ? "14px" : "18px",
+            background: "rgba(7,18,40,0.92)",
           }}
         >
-          <input
-            placeholder={`Message ${activeChat.name}…`}
-            className="flex-1 bg-transparent outline-none"
-            style={{
-              border: "none",
-              fontFamily: "'Inter', sans-serif",
-              fontSize: "13.5px",
-              color: "#e2e8f0",
-              caretColor: "#22d3ee",
-            }}
-          />
+          {sendError && (
+            <div style={{ color: "#f87171", marginBottom: "10px" }}>
+              {sendError}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+              {typingUsers.length > 0 && (
+                <div style={{ color: 'rgba(148,163,184,0.85)', fontSize: '12px', marginBottom: '6px' }}>
+                  {typingUsers.length === 1
+                    ? `${typingUsers[0].name || 'Someone'} is typing...`
+                    : 'Multiple people are typing...'}
+                </div>
+              )}
 
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.93 }}
-            className="flex p-1"
-            style={{
-              background: "none",
-              border: "none",
-              color: "rgba(100,116,139,0.5)",
-            }}
-          >
-            <svg
-              width="16"
-              height="16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              viewBox="0 0 24 24"
+              <div
+              style={{
+                display: "flex",
+                alignItems: "flex-end",
+                 gap: "10px",
+                }}
+               >
+              <textarea
+                value={newMessage}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+               placeholder="Type a message..."
+               rows={1.6}
+               style={{
+                width: "100%",
+                resize: "none",
+                borderRadius: "16px",
+                border: "1px solid rgba(255,255,255,0.08)",
+                background: "rgba(255,255,255,0.04)",
+                color: "#e2e8f0",
+                padding: "12px 14px",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: "13px",
+                outline: "none",
+              }}
+            />
+            <button
+              onClick={handleSendMessage}
+              style={{
+                border: "none",
+                borderRadius: "18px",
+                background: "linear-gradient(135deg, #0ea5e9, #22d3ee)",
+                color: "#fff",
+                padding: "9px 17px",
+                cursor: "pointer",
+                fontWeight: 700,
+              }}
             >
-              <path
-                d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
-                strokeLinecap="round"
-              />
-            </svg>
-          </motion.button>
-
-          <motion.button
-            whileHover={{
-              scale: 1.06,
-              boxShadow: "0 0 16px rgba(34,211,238,0.4)",
-            }}
-            whileTap={{ scale: 0.93 }}
-            className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px]"
-            style={{
-              border: "none",
-              background:
-                "linear-gradient(135deg, #0ea5e9, #22d3ee)",
-              boxShadow:
-                "0 0 12px rgba(34,211,238,0.25)",
-            }}
-          >
-            <svg
-              width="14"
-              height="14"
-              fill="none"
-              stroke="white"
-              strokeWidth="2.3"
-              viewBox="0 0 24 24"
-            >
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-          </motion.button>
+              Send
+            </button>
+            </div>
+            </div>
         </div>
+      </div>
       </div>
     </motion.div>
   );

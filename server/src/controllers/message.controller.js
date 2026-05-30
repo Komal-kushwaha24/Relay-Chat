@@ -30,7 +30,13 @@ export const getMessages = async (req, res) => {
       });
     }
 
+    const userId = req.user._id.toString();
     const messages = await Message.find({ conversation: conversationId }).sort({ createdAt: 1 });
+
+    if (conversation.unreadCounts?.get?.(userId) > 0) {
+      conversation.unreadCounts.set(userId, 0);
+      await conversation.save();
+    }
 
     res.status(200).json({
       success: true,
@@ -81,6 +87,16 @@ export const sendMessage = async (req, res) => {
     });
 
     conversation.lastMessage = message.text;
+    conversation.unreadCounts = conversation.unreadCounts || new Map();
+    conversation.participants.forEach((participant) => {
+      const participantId = participant.toString();
+      if (participantId === sender.toString()) {
+        conversation.unreadCounts.set(participantId, 0);
+      } else {
+        const count = conversation.unreadCounts.get(participantId) || 0;
+        conversation.unreadCounts.set(participantId, count + 1);
+      }
+    });
     await conversation.save();
 
     res.status(201).json({

@@ -1,4 +1,9 @@
-import { memo, useMemo } from "react";
+import {
+  memo,
+  useMemo,
+  useState,
+} from "react";
+
 import { motion, AnimatePresence } from "framer-motion";
 
 import Avatar from "../common/Avatar";
@@ -26,6 +31,7 @@ function SidebarContent({
   currentUser,
   onlineUsers = [],
   onUserClick,
+  onProfileOpen,
 }) {
   const handleChatClick = (id) => {
     setActive(id);
@@ -195,6 +201,19 @@ function SidebarContent({
             </motion.div>
           ))}
         </AnimatePresence>
+
+        {filtered.length === 0 && (
+          <div
+            style={{
+              color: "rgba(148,163,184,0.8)",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: "13px",
+              padding: "18px 10px",
+            }}
+          >
+            No conversations yet. Use the chat area to start a new conversation.
+          </div>
+        )}
       </div>
 
       {/* ONLINE USERS */}
@@ -236,6 +255,7 @@ function SidebarContent({
               title={`Start chat with ${user.name}`}
             >
               <Avatar
+                src={user.profilePicture}
                 initials={user.avatar}
                 color={user.color}
                 size={32}
@@ -252,14 +272,17 @@ function SidebarContent({
                 padding: "4px 0",
               }}
             >
-              No other users registered
+              No users online
             </div>
           )}
         </div>
       </div>
 
+
+
       {/* Bottom User Profile */}
       <div
+        onClick={onProfileOpen}
         style={{
           marginTop: "auto",
           padding: "16px",
@@ -267,25 +290,15 @@ function SidebarContent({
           display: "flex",
           alignItems: "center",
           gap: "12px",
+          cursor: onProfileOpen ? "pointer" : "default",
         }}
       >
-        <div
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: "14px",
-            background: "linear-gradient(135deg,#0ea5e9,#22d3ee)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#fff",
-            fontWeight: 700,
-            fontFamily: "'Outfit', sans-serif",
-            boxShadow: "0 0 20px rgba(34,211,238,0.3)",
-          }}
-        >
-          {myInitials}
-        </div>
+        <Avatar
+          src={currentUser?.profilePicture}
+          initials={myInitials}
+          color="#0ea5e9"
+          size={42}
+        />
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
