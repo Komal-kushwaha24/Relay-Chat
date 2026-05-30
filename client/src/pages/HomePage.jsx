@@ -376,12 +376,20 @@ export default function HomePage() {
   }, [conversations, currentUser, onlineConversationUsers, conversationTyping]);
 
   const filteredChats = useMemo(() => {
-    const q = search.toLowerCase();
-    return chats.filter(
-      (chat) =>
-        chat.name.toLowerCase().includes(q) ||
-        chat.msg.toLowerCase().includes(q)
-    );
+    const q = (search || "").trim().toLowerCase();
+    if (!q) return chats;
+
+    const tokens = q.split(/\s+/).filter(Boolean);
+
+    return chats.filter((chat) => {
+      const name = (chat.name || "").toLowerCase();
+      const words = name.split(/\s+/).filter(Boolean);
+
+      // require every token to match start of any word in the name
+      return tokens.every((token) =>
+        words.some((w) => w.startsWith(token))
+      );
+    });
   }, [search, chats]);
 
   const activeChat = useMemo(
