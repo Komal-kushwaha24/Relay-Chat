@@ -1,12 +1,16 @@
 import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
-import { getUsers, createConversation } from "../../services/api";
+import { getUsers, createMessageRequest } from "../../services/api";
 
-function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], onConversationCreated }) {
+function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [] }) {
   const [showUsers, setShowUsers] = useState(false);
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState(null);
+  const [activeRequestUserId, setActiveRequestUserId] = useState(null);
+  const [requestText, setRequestText] = useState("");
+  const [sendingRequest, setSendingRequest] = useState(false);
+  const [requestNotice, setRequestNotice] = useState(null);
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -57,24 +61,35 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], 
     });
   }, [users, existingParticipantIds]);
 
-  const handleStartConversation = async (user) => {
+  const handleSendRequest = async (user) => {
     if (!currentUser?._id && !currentUser?.id) {
       alert("Current user not available. Please login.");
       return;
     }
 
-    const myId = currentUser._id ?? currentUser.id;
     const otherId = user._id ?? user.id;
+    const trimmed = requestText.trim();
 
+    if (!trimmed) {
+      setRequestNotice({ type: "error", text: "Write a message before sending the request." });
+      return;
+    }
+
+    setSendingRequest(true);
+    setRequestNotice(null);
     try {
-      const res = await createConversation([myId, otherId]);
-      const conversation = res.data?.data ?? res.data ?? null;
-      if (conversation && onConversationCreated) {
-        onConversationCreated(conversation);
-      }
+      await createMessageRequest(otherId, trimmed);
+      setRequestNotice({ type: "success", text: `Request sent to ${user.fullName || user.name}.` });
+      setRequestText("");
+      setActiveRequestUserId(null);
     } catch (err) {
-      console.error("Failed to create conversation", err);
-      alert("Failed to create conversation");
+      console.error("Failed to send request", err);
+      setRequestNotice({
+        type: "error",
+        text: err.response?.data?.message || err.message || "Failed to send request",
+      });
+    } finally {
+      setSendingRequest(false);
     }
   };
 
@@ -220,6 +235,11 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], 
 
             {loadingUsers && <div style={{ color: "rgba(148,163,184,0.8)" }}>Loading users...</div>}
             {usersError && <div style={{ color: "#f87171" }}>{usersError}</div>}
+            {requestNotice && (
+              <div style={{ color: requestNotice.type === "error" ? "#f87171" : "#22d3ee", marginBottom: 10, fontSize: 13 }}>
+                {requestNotice.text}
+              </div>
+            )}
 
             {!loadingUsers && availableUsers.length === 0 && !usersError && (
               <div style={{ color: "rgba(148,163,184,0.8)" }}>No users found</div>
@@ -227,18 +247,56 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], 
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {availableUsers.map((user) => (
-                <div key={user._id ?? user.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.02)" }}>
-                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#0ea5e9,#22d3ee)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700 }}>{(user.fullName || user.name || "?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
-                    <div>
-                      <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{user.fullName || user.name}</div>
-                      <div style={{ color: "rgba(148,163,184,0.7)", fontSize: 12 }}>{user.email}</div>
+                <div key={user._id ?? user.id} style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.02)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0 }}>
+                      <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 10, background: "linear-gradient(135deg,#0ea5e9,#22d3ee)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700 }}>{(user.fullName || user.name || "?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{user.fullName || user.name}</div>
+                        <div style={{ color: "rgba(148,163,184,0.7)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis" }}>{user.email}</div>
+                      </div>
                     </div>
+
+                    <button
+                      onClick={() => {
+                        const id = user._id ?? user.id;
+                        setActiveRequestUserId((current) => current === id ? null : id);
+                        setRequestNotice(null);
+                      }}
+                      style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "rgba(34,211,238,0.12)", color: "rgba(34,211,238,0.95)", cursor: "pointer", fontWeight: 600 }}
+                    >
+                      Message
+                    </button>
                   </div>
 
-                  <div>
-                    <button onClick={() => handleStartConversation(user)} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "rgba(34,211,238,0.12)", color: "rgba(34,211,238,0.95)", cursor: "pointer", fontWeight: 600 }}>Start</button>
-                  </div>
+                  {activeRequestUserId === (user._id ?? user.id) && (
+                    <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "flex-end" }}>
+                      <textarea
+                        value={requestText}
+                        onChange={(event) => setRequestText(event.target.value)}
+                        placeholder="Send a message request..."
+                        rows={2}
+                        style={{
+                          flex: 1,
+                          resize: "none",
+                          borderRadius: 10,
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          background: "rgba(255,255,255,0.04)",
+                          color: "#e2e8f0",
+                          padding: "9px 10px",
+                          outline: "none",
+                          fontSize: 13,
+                        }}
+                      />
+                      <button
+                        disabled={sendingRequest}
+                        onClick={() => handleSendRequest(user)}
+                        style={{ padding: "9px 12px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#0ea5e9,#22d3ee)", color: "#fff", cursor: sendingRequest ? "default" : "pointer", fontWeight: 700, opacity: sendingRequest ? 0.7 : 1 }}
+                      >
+                        Send
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

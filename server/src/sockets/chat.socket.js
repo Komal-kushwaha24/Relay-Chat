@@ -1,5 +1,14 @@
 import Conversation from '../models/conversation.model.js';
 import Message from '../models/message.model.js';
+import User from '../models/user.model.js';
+
+const createMessageRequestPayload = (request) => ({
+  _id: request._id,
+  from: request.from,
+  fromName: request.fromName,
+  text: request.text,
+  createdAt: request.createdAt,
+});
 
 export const registerChatHandlers = (io, socket) => {
   socket.on('chat:join', async (roomId, callback) => {
@@ -73,7 +82,7 @@ export const registerChatHandlers = (io, socket) => {
   });
 
   socket.on('chat:message', async (payload, callback) => {
-    const { roomId, text } = payload ?? {};
+    const { roomId, text, toUserId } = payload ?? {};
 
     if (!roomId || !text?.trim()) {
       callback?.({ success: false, message: 'roomId and text are required' });
@@ -92,7 +101,44 @@ export const registerChatHandlers = (io, socket) => {
       );
 
       if (!isParticipant) {
-        callback?.({ success: false, message: 'Not authorized for this conversation' });
+        // If sender is not participant, treat as message request to the recipient
+        const recipientId = toUserId || conversation.participants.find(p => p.toString() !== socket.data.user.id)?.toString();
+        if (!recipientId) {
+          callback?.({ success: false, message: 'Recipient not found' });
+          return;
+        }
+
+        // Add message request to recipient's record
+        const recipient = await User.findById(recipientId);
+        if (!recipient) {
+          callback?.({ success: false, message: 'Recipient not found' });
+          return;
+        }
+
+        recipient.messageRequests = recipient.messageRequests || [];
+        let newRequest = recipient.messageRequests.find(
+          (request) => request.from.toString() === socket.data.user.id
+        );
+
+        if (newRequest) {
+          newRequest.text = text.trim();
+          newRequest.fromName = socket.data.user.fullName || '';
+          newRequest.createdAt = new Date();
+        } else {
+          newRequest = recipient.messageRequests.create({
+            from: socket.data.user.id,
+            text: text.trim(),
+            fromName: socket.data.user.fullName || '',
+          });
+          recipient.messageRequests.push(newRequest);
+        }
+
+        await recipient.save();
+
+        // notify recipient via their user room
+        io.to(`user:${recipientId}`).emit('messageRequest:received', createMessageRequestPayload(newRequest));
+
+        callback?.({ success: true, data: { request: true } });
         return;
       }
 

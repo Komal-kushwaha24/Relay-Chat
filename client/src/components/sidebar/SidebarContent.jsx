@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Avatar from "../common/Avatar";
 import SearchBar from "./SearchBar";
 import ChatRow from "./ChatRow";
+import HiddenRequests from "./HiddenRequests";
 import { logoutUser } from "../../services/api";
 
 const getInitials = (name) => {
@@ -32,7 +33,13 @@ function SidebarContent({
   onlineUsers = [],
   onUserClick,
   onProfileOpen,
+  messageRequestCount = 0,
+  messageRequests = [],
+  setMessageRequests,
+  onRequestAccepted,
 }) {
+  const [requestsOpen, setRequestsOpen] = useState(false);
+
   const handleChatClick = (id) => {
     setActive(id);
 
@@ -156,12 +163,58 @@ function SidebarContent({
             marginTop: "14px",
           }}
         >
-          <SearchBar
-            value={search}
-            onChange={(e) =>
-              setSearch(e.target.value)
-            }
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <SearchBar
+                value={search}
+                onChange={(e) =>
+                  setSearch(e.target.value)
+                }
+              />
+            </div>
+
+            {typeof window !== 'undefined' && (
+              <div style={{ marginLeft: 6 }}>
+                {/* Hidden requests badge */}
+                {/* `messageRequestCount` prop expected (number) */}
+                {typeof messageRequestCount === 'number' && messageRequestCount > 0 && (
+                  <div style={{
+                    minWidth: 32,
+                    height: 32,
+                    borderRadius: 10,
+                    background: 'rgba(34,211,238,0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#22d3ee',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }} title={`${messageRequestCount} hidden requests`} onClick={() => {
+                    setRequestsOpen((open) => !open);
+                  }}>
+                    {messageRequestCount}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: 10 }} data-hidden-requests>
+            <HiddenRequests
+              requests={messageRequests}
+              setRequests={setMessageRequests}
+              open={requestsOpen}
+              onToggle={() => setRequestsOpen((open) => !open)}
+              onOpenConversation={(conversation) => {
+                if (onChatSelect) onChatSelect();
+                if (conversation && onRequestAccepted) {
+                  onRequestAccepted(conversation);
+                } else if (conversation && conversation._id && onUserClick) {
+                  onUserClick(conversation._id);
+                }
+              }}
+            />
+          </div>
         </div>
       </div>
 

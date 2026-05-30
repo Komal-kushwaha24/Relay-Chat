@@ -11,6 +11,10 @@ function DesktopSidebar({
   onlineUsers,
   onUserClick,
   onProfileOpen,
+  messageRequestCount = 0,
+  messageRequests = [],
+  setMessageRequests,
+  onRequestAccepted,
 }) {
   return (
     <motion.div
@@ -35,6 +39,10 @@ function DesktopSidebar({
         onlineUsers={onlineUsers}
         onUserClick={onUserClick}
         onProfileOpen={onProfileOpen}
+        messageRequestCount={messageRequestCount}
+        messageRequests={messageRequests}
+        setMessageRequests={setMessageRequests}
+        onRequestAccepted={onRequestAccepted}
       />
     </motion.div>
   );

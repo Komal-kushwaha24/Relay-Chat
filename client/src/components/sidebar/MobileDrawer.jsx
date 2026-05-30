@@ -13,6 +13,10 @@ function MobileDrawer({
   onlineUsers,
   onUserClick,
   onProfileOpen,
+  messageRequestCount = 0,
+  messageRequests = [],
+  setMessageRequests,
+  onRequestAccepted,
 }) {
   return (
     <AnimatePresence>
@@ -82,6 +86,10 @@ function MobileDrawer({
                 onClose();
                 if (onProfileOpen) onProfileOpen();
               }}
+              messageRequestCount={messageRequestCount}
+              messageRequests={messageRequests}
+              setMessageRequests={setMessageRequests}
+              onRequestAccepted={onRequestAccepted}
             />
           </motion.div>
         </>

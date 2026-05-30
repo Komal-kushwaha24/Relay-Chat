@@ -64,7 +64,6 @@ function ChatArea({
   currentUser,
   conversations,
   onConversationUpdated,
-  onConversationCreated,
   onExitChat,
 }) {
   const [messages, setMessages] = useState([]);
@@ -325,7 +324,6 @@ function ChatArea({
           isMobile={isMobile}
           currentUser={currentUser}
           conversations={conversations}
-          onConversationCreated={onConversationCreated}
         />
       </div>
     );

@@ -8,7 +8,7 @@ import MobileTopBar from "../components/sidebar/MobileTopBar";
 
 import ChatArea from "../components/chat/ChatArea";
 import ProfilePage from "./ProfilePage";
-import { getCurrentUser, getConversations } from "../services/api";
+import { getCurrentUser, getConversations, getMessageRequests } from "../services/api";
 import { getSocket } from "../services/socket";
 
 const getInitials = (name) => {
@@ -86,6 +86,7 @@ export default function HomePage() {
   const [conversationTyping, setConversationTyping] = useState({});
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [messageRequests, setMessageRequests] = useState([]);
 
   const openProfile = () => setShowProfile(true);
   const closeProfile = () => setShowProfile(false);
@@ -166,6 +167,23 @@ export default function HomePage() {
     socket.on("online:users", handleOnlineUsers);
     socket.on("conversation:update", handleConversationUpdated);
     socket.on("conversation:typing", handleConversationTyping);
+    const handleMessageRequestReceived = (payload) => {
+      // add incoming request to local state
+      if (!payload) return;
+      setMessageRequests((prev) => {
+        const requestId = payload._id?.toString?.() || payload.id?.toString?.();
+        const payloadSender = payload.from?.toString?.();
+        const withoutDuplicate = (prev || []).filter((request) => {
+          const existingId = request._id?.toString?.() || request.id?.toString?.();
+          const existingSender = request.from?.toString?.();
+          return existingId !== requestId && existingSender !== payloadSender;
+        });
+
+        return [payload, ...withoutDuplicate];
+      });
+    };
+
+    socket.on('messageRequest:received', handleMessageRequestReceived);
     socket.on('user:updated', (u) => {
       if (!u || !u.id) return;
       const updatedId = u.id || u._id;
@@ -220,6 +238,15 @@ export default function HomePage() {
 
     if (currentUser) {
       socket.connect();
+      // fetch existing requests
+      (async () => {
+        try {
+          const res = await getMessageRequests();
+          setMessageRequests(res.data?.data || []);
+        } catch {
+          // ignore
+        }
+      })();
     }
 
     return () => {
@@ -228,6 +255,7 @@ export default function HomePage() {
       socket.off("online:users", handleOnlineUsers);
       socket.off("conversation:update", handleConversationUpdated);
       socket.off("conversation:typing", handleConversationTyping);
+      socket.off('messageRequest:received', handleMessageRequestReceived);
       socket.off('user:updated');
       socket.off("connect_error", handleConnectError);
       socket.disconnect();
@@ -343,6 +371,24 @@ export default function HomePage() {
     await reloadConversations();
   };
 
+  const handleOpenConversationById = async (conversationId) => {
+    if (!conversationId) return;
+    setActiveId(conversationId);
+    await reloadConversations();
+  };
+
+  const handleRequestAccepted = async (conversation) => {
+    const id = conversation?._id || conversation?.id;
+    if (!id) return;
+
+    setConversations((prev) => {
+      const exists = (prev || []).some((item) => (item._id || item.id) === id);
+      return sortConversations(exists ? prev : [conversation, ...(prev || [])]);
+    });
+    setActiveId(id);
+    await reloadConversations();
+  };
+
   return (
     <>
       {/* Background */}
@@ -368,6 +414,11 @@ export default function HomePage() {
             currentUser={currentUser}
             onlineUsers={onlineConversationUsers}
             onProfileOpen={openProfile}
+            onUserClick={handleOpenConversationById}
+            messageRequestCount={messageRequests.length}
+            messageRequests={messageRequests}
+            setMessageRequests={setMessageRequests}
+            onRequestAccepted={handleRequestAccepted}
           />
 
           <MobileTopBar
@@ -400,6 +451,11 @@ export default function HomePage() {
             currentUser={currentUser}
             onlineUsers={onlineConversationUsers}
             onProfileOpen={openProfile}
+            onUserClick={handleOpenConversationById}
+            messageRequestCount={messageRequests.length}
+            messageRequests={messageRequests}
+            setMessageRequests={setMessageRequests}
+            onRequestAccepted={handleRequestAccepted}
           />
 
           <div className="flex-1 overflow-hidden">
