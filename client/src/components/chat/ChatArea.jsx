@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 
 import Avatar from "../common/Avatar";
 import EmptyState from "./EmptyState";
-import { getMessages, sendMessage } from "../../services/api";
+import { getMessages, sendMessage, undoMessage } from "../../services/api";
 import { getSocket } from "../../services/socket";
 
 const getMessageId = (message) =>
@@ -49,6 +49,9 @@ const replacePendingMessage = (existing = [], tempId, incoming) => {
   return mergeMessages(existing, [incoming]);
 };
 
+const removeMessageById = (existing = [], messageId) =>
+  existing.filter((message) => getMessageId(message) !== messageId?.toString?.());
+
 const formatTime = (value) => {
   if (!value) return "";
   return new Date(value).toLocaleTimeString([], {
@@ -72,10 +75,16 @@ function ChatArea({
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [sendError, setSendError] = useState(null);
+  const [undoingIds, setUndoingIds] = useState(() => new Set());
   const socket = getSocket();
   const messagesEndRef = useRef(null);
+  const onConversationUpdatedRef = useRef(onConversationUpdated);
   const [typingUsers, setTypingUsers] = useState([]);
   const typingTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    onConversationUpdatedRef.current = onConversationUpdated;
+  }, [onConversationUpdated]);
 
   const emitTyping = (isTyping) => {
     try {
@@ -146,6 +155,17 @@ function ChatArea({
       });
     };
 
+    const handleDeletedMessage = (payload) => {
+      if (!payload || payload.roomId !== roomId || !payload.messageId) {
+        return;
+      }
+
+      setMessages((prev) => removeMessageById(prev, payload.messageId));
+      if (payload.conversation && onConversationUpdatedRef.current) {
+        onConversationUpdatedRef.current(payload.conversation);
+      }
+    };
+
     socket.emit("chat:join", roomId, (response) => {
       if (!response?.success) {
         console.error("Failed to join chat room", response?.message);
@@ -154,14 +174,16 @@ function ChatArea({
 
     socket.on("chat:message", handleIncomingMessage);
     socket.on("chat:typing", handleIncomingTyping);
+    socket.on("chat:message:deleted", handleDeletedMessage);
 
     return () => {
       socket.off("chat:message", handleIncomingMessage);
       socket.off("chat:typing", handleIncomingTyping);
+      socket.off("chat:message:deleted", handleDeletedMessage);
       setTypingUsers([]);
       socket.emit("chat:leave", roomId);
     };
-  }, [activeChat?.id, socket]);
+  }, [activeChat?.id, socket, currentUser]);
 
   const emitChatMessage = (payload) =>
     new Promise((resolve, reject) => {
@@ -189,6 +211,34 @@ function ChatArea({
 
         if (!response.success) {
           reject(new Error(response.message || "Failed to send message"));
+          return;
+        }
+
+        resolve(response.data);
+      });
+    });
+
+  const emitUndoMessage = (payload) =>
+    new Promise((resolve, reject) => {
+      if (!socket || !socket.connected) {
+        reject(new Error("Socket is not connected"));
+        return;
+      }
+
+      const timeoutId = setTimeout(() => {
+        reject(new Error("No acknowledgment from server"));
+      }, 5000);
+
+      socket.emit("chat:message:undo", payload, (response) => {
+        clearTimeout(timeoutId);
+
+        if (!response) {
+          reject(new Error("No acknowledgment from server"));
+          return;
+        }
+
+        if (!response.success) {
+          reject(new Error(response.message || "Failed to undo message"));
           return;
         }
 
@@ -294,6 +344,55 @@ function ChatArea({
         setMessages((prev) => prev.filter((msg) => msg.tempId !== tempId));
         setSendError(err.message || "Failed to send message");
       }
+    }
+  };
+
+  const handleUndoMessage = async (message) => {
+    const messageId = getMessageId(message);
+    if (!messageId || !activeChat || message.pending) return;
+
+    setSendError(null);
+    setUndoingIds((prev) => new Set(prev).add(messageId));
+
+    try {
+      const result = await emitUndoMessage({
+        roomId: activeChat.id,
+        messageId,
+      });
+
+      setMessages((prev) => removeMessageById(prev, messageId));
+      if (result?.conversation && onConversationUpdated) {
+        onConversationUpdated(result.conversation);
+      }
+    } catch (err) {
+      if (!socket?.connected) {
+        try {
+          const res = await undoMessage(messageId);
+          const deleted = res.data?.data;
+          setMessages((prev) => removeMessageById(prev, messageId));
+          if (deleted && onConversationUpdated) {
+            onConversationUpdated({
+              conversationId: deleted.conversationId,
+              lastMessage: deleted.lastMessage,
+              updatedAt: deleted.updatedAt,
+            });
+          }
+        } catch (apiErr) {
+          console.error("Failed to undo message", apiErr);
+          setSendError(
+            apiErr.response?.data?.message || apiErr.message || err.message || "Failed to undo message"
+          );
+        }
+      } else {
+        console.error("Failed to undo message", err);
+        setSendError(err.message || "Failed to undo message");
+      }
+    } finally {
+      setUndoingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(messageId);
+        return next;
+      });
     }
   };
 
@@ -468,23 +567,52 @@ function ChatArea({
                 })()}
 
                 <div style={{ maxWidth: isMobile ? "75%" : "60%" }}>
-                  <div
-                    style={{
-                      padding: "10px 14px",
-                      borderRadius: msg.isMe ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                      background: msg.isMe
-                        ? "linear-gradient(135deg, #0ea5e9, #0891b2)"
-                        : "rgba(255,255,255,0.06)",
-                      border: msg.isMe ? "none" : "1px solid rgba(255,255,255,0.07)",
-                      boxShadow: msg.isMe ? "0 0 16px rgba(14,165,233,0.25)" : "none",
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: isMobile ? "13px" : "13.5px",
-                      color: msg.isMe ? "#fff" : "#cbd5e1",
-                      fontWeight: 300,
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {msg.text}
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", flexDirection: msg.isMe ? "row-reverse" : "row" }}>
+                    <div
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: msg.isMe ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                        background: msg.isMe
+                          ? "linear-gradient(135deg, #0ea5e9, #0891b2)"
+                          : "rgba(255,255,255,0.06)",
+                        border: msg.isMe ? "none" : "1px solid rgba(255,255,255,0.07)",
+                        boxShadow: msg.isMe ? "0 0 16px rgba(14,165,233,0.25)" : "none",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: isMobile ? "13px" : "13.5px",
+                        color: msg.isMe ? "#fff" : "#cbd5e1",
+                        fontWeight: 300,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {msg.text}
+                    </div>
+
+                    {msg.isMe && !msg.pending && (
+                      <button
+                        onClick={() => handleUndoMessage(msg)}
+                        disabled={undoingIds.has(getMessageId(msg))}
+                        title="Undo message"
+                        style={{
+                          width: 28,
+                          height: 28,
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          borderRadius: "50%",
+                          background: "rgba(255,255,255,0.05)",
+                          color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "rgba(226,232,240,0.78)",
+                          cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                        aria-label="Undo message"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 7v6h6" />
+                          <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
 
                   <div

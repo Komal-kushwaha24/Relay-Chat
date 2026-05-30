@@ -10,6 +10,20 @@ const createMessageRequestPayload = (request) => ({
   createdAt: request.createdAt,
 });
 
+const refreshConversationAfterMessageDelete = async (conversation) => {
+  const latestMessage = await Message.findOne({ conversation: conversation._id })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  conversation.lastMessage = latestMessage?.text || '';
+  await conversation.save();
+
+  return {
+    lastMessage: conversation.lastMessage,
+    updatedAt: conversation.updatedAt,
+  };
+};
+
 export const registerChatHandlers = (io, socket) => {
   socket.on('chat:join', async (roomId, callback) => {
     if (!roomId) {
@@ -193,6 +207,79 @@ export const registerChatHandlers = (io, socket) => {
       callback?.({ success: true, data: message });
     } catch (error) {
       callback?.({ success: false, message: error.message || 'Failed to send message' });
+    }
+  });
+
+  socket.on('chat:message:undo', async (payload, callback) => {
+    const { roomId, messageId } = payload ?? {};
+
+    if (!roomId || !messageId) {
+      callback?.({ success: false, message: 'roomId and messageId are required' });
+      return;
+    }
+
+    try {
+      const conversation = await Conversation.findById(roomId);
+      if (!conversation) {
+        callback?.({ success: false, message: 'Conversation not found' });
+        return;
+      }
+
+      const isParticipant = conversation.participants.some(
+        (participant) => participant.toString() === socket.data.user.id
+      );
+
+      if (!isParticipant) {
+        callback?.({ success: false, message: 'Not authorized for this conversation' });
+        return;
+      }
+
+      const message = await Message.findOne({ _id: messageId, conversation: roomId });
+      if (!message) {
+        callback?.({ success: false, message: 'Message not found' });
+        return;
+      }
+
+      if (message.sender.toString() !== socket.data.user.id) {
+        callback?.({ success: false, message: 'You can only undo your own messages' });
+        return;
+      }
+
+      await Message.deleteOne({ _id: message._id });
+
+      conversation.unreadCounts = conversation.unreadCounts || new Map();
+      conversation.participants.forEach((participant) => {
+        const participantId = participant.toString();
+        if (participantId !== socket.data.user.id) {
+          const count = conversation.unreadCounts.get(participantId) || 0;
+          conversation.unreadCounts.set(participantId, Math.max(0, count - 1));
+        }
+      });
+
+      const conversationUpdate = await refreshConversationAfterMessageDelete(conversation);
+      const deletedPayload = {
+        roomId,
+        messageId: message._id.toString(),
+        conversation: {
+          conversationId: roomId,
+          ...conversationUpdate,
+        },
+      };
+
+      conversation.participants.forEach((participant) => {
+        const participantId = participant.toString();
+        io.to(`user:${participantId}`).emit('chat:message:deleted', deletedPayload);
+        io.to(`user:${participantId}`).emit('conversation:update', {
+          conversationId: roomId,
+          lastMessage: conversationUpdate.lastMessage,
+          updatedAt: conversationUpdate.updatedAt,
+          unreadCount: conversation.unreadCounts?.get(participantId) || 0,
+        });
+      });
+
+      callback?.({ success: true, data: deletedPayload });
+    } catch (error) {
+      callback?.({ success: false, message: error.message || 'Failed to undo message' });
     }
   });
 };
