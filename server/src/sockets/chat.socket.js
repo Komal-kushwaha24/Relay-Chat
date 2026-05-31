@@ -24,6 +24,23 @@ const refreshConversationAfterMessageDelete = async (conversation) => {
   };
 };
 
+const refreshConversationAfterMessageChange = async (conversation) => {
+  const latestMessage = await Message.findOne({ conversation: conversation._id })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const lastMessage = latestMessage?.text || '';
+  if (conversation.lastMessage !== lastMessage) {
+    conversation.lastMessage = lastMessage;
+    await conversation.save();
+  }
+
+  return {
+    lastMessage: conversation.lastMessage,
+    updatedAt: conversation.updatedAt,
+  };
+};
+
 export const registerChatHandlers = (io, socket) => {
   socket.on('chat:join', async (roomId, callback) => {
     if (!roomId) {
@@ -280,6 +297,79 @@ export const registerChatHandlers = (io, socket) => {
       callback?.({ success: true, data: deletedPayload });
     } catch (error) {
       callback?.({ success: false, message: error.message || 'Failed to undo message' });
+    }
+  });
+
+  socket.on('chat:message:edit', async (payload, callback) => {
+    const { roomId, messageId, text } = payload ?? {};
+
+    if (!roomId || !messageId || !text?.trim()) {
+      callback?.({ success: false, message: 'roomId, messageId, and text are required' });
+      return;
+    }
+
+    try {
+      const conversation = await Conversation.findById(roomId);
+      if (!conversation) {
+        callback?.({ success: false, message: 'Conversation not found' });
+        return;
+      }
+
+      const isParticipant = conversation.participants.some(
+        (participant) => participant.toString() === socket.data.user.id
+      );
+
+      if (!isParticipant) {
+        callback?.({ success: false, message: 'Not authorized for this conversation' });
+        return;
+      }
+
+      const message = await Message.findOne({ _id: messageId, conversation: roomId });
+      if (!message) {
+        callback?.({ success: false, message: 'Message not found' });
+        return;
+      }
+
+      if (message.sender.toString() !== socket.data.user.id) {
+        callback?.({ success: false, message: 'You can only edit your own messages' });
+        return;
+      }
+
+      message.text = text.trim();
+      await message.save();
+
+      const conversationUpdate = await refreshConversationAfterMessageChange(conversation);
+      const updatedMessage = {
+        _id: message._id.toString(),
+        sender: message.sender.toString(),
+        conversation: message.conversation.toString(),
+        text: message.text,
+        createdAt: message.createdAt,
+        updatedAt: message.updatedAt,
+      };
+      const updatedPayload = {
+        roomId,
+        message: updatedMessage,
+        conversation: {
+          conversationId: roomId,
+          ...conversationUpdate,
+        },
+      };
+
+      conversation.participants.forEach((participant) => {
+        const participantId = participant.toString();
+        io.to(`user:${participantId}`).emit('chat:message:updated', updatedPayload);
+        io.to(`user:${participantId}`).emit('conversation:update', {
+          conversationId: roomId,
+          lastMessage: conversationUpdate.lastMessage,
+          updatedAt: conversationUpdate.updatedAt,
+          unreadCount: conversation.unreadCounts?.get(participantId) || 0,
+        });
+      });
+
+      callback?.({ success: true, data: updatedPayload });
+    } catch (error) {
+      callback?.({ success: false, message: error.message || 'Failed to edit message' });
     }
   });
 };

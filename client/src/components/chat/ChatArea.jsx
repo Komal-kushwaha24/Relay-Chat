@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 
 import Avatar from "../common/Avatar";
 import EmptyState from "./EmptyState";
-import { getMessages, sendMessage, undoMessage } from "../../services/api";
+import { editMessage, getMessages, sendMessage, undoMessage } from "../../services/api";
 import { getSocket } from "../../services/socket";
 
 const getMessageId = (message) =>
@@ -52,6 +52,13 @@ const replacePendingMessage = (existing = [], tempId, incoming) => {
 const removeMessageById = (existing = [], messageId) =>
   existing.filter((message) => getMessageId(message) !== messageId?.toString?.());
 
+const updateMessageById = (existing = [], incoming) =>
+  existing.map((message) =>
+    getMessageId(message) === getMessageId(incoming)
+      ? { ...message, ...incoming }
+      : message
+  );
+
 const formatTime = (value) => {
   if (!value) return "";
   return new Date(value).toLocaleTimeString([], {
@@ -76,6 +83,9 @@ function ChatArea({
   const [newMessage, setNewMessage] = useState("");
   const [sendError, setSendError] = useState(null);
   const [undoingIds, setUndoingIds] = useState(() => new Set());
+  const [editingId, setEditingId] = useState(null);
+  const [editingText, setEditingText] = useState("");
+  const [savingEditId, setSavingEditId] = useState(null);
   const socket = getSocket();
   const messagesEndRef = useRef(null);
   const onConversationUpdatedRef = useRef(onConversationUpdated);
@@ -166,6 +176,17 @@ function ChatArea({
       }
     };
 
+    const handleUpdatedMessage = (payload) => {
+      if (!payload || payload.roomId !== roomId || !payload.message) {
+        return;
+      }
+
+      setMessages((prev) => updateMessageById(prev, payload.message));
+      if (payload.conversation && onConversationUpdatedRef.current) {
+        onConversationUpdatedRef.current(payload.conversation);
+      }
+    };
+
     socket.emit("chat:join", roomId, (response) => {
       if (!response?.success) {
         console.error("Failed to join chat room", response?.message);
@@ -175,11 +196,13 @@ function ChatArea({
     socket.on("chat:message", handleIncomingMessage);
     socket.on("chat:typing", handleIncomingTyping);
     socket.on("chat:message:deleted", handleDeletedMessage);
+    socket.on("chat:message:updated", handleUpdatedMessage);
 
     return () => {
       socket.off("chat:message", handleIncomingMessage);
       socket.off("chat:typing", handleIncomingTyping);
       socket.off("chat:message:deleted", handleDeletedMessage);
+      socket.off("chat:message:updated", handleUpdatedMessage);
       setTypingUsers([]);
       socket.emit("chat:leave", roomId);
     };
@@ -239,6 +262,34 @@ function ChatArea({
 
         if (!response.success) {
           reject(new Error(response.message || "Failed to undo message"));
+          return;
+        }
+
+        resolve(response.data);
+      });
+    });
+
+  const emitEditMessage = (payload) =>
+    new Promise((resolve, reject) => {
+      if (!socket || !socket.connected) {
+        reject(new Error("Socket is not connected"));
+        return;
+      }
+
+      const timeoutId = setTimeout(() => {
+        reject(new Error("No acknowledgment from server"));
+      }, 5000);
+
+      socket.emit("chat:message:edit", payload, (response) => {
+        clearTimeout(timeoutId);
+
+        if (!response) {
+          reject(new Error("No acknowledgment from server"));
+          return;
+        }
+
+        if (!response.success) {
+          reject(new Error(response.message || "Failed to edit message"));
           return;
         }
 
@@ -393,6 +444,71 @@ function ChatArea({
         next.delete(messageId);
         return next;
       });
+    }
+  };
+
+  const startEditingMessage = (message) => {
+    if (!message?.isMe || message.pending) return;
+    setSendError(null);
+    setEditingId(getMessageId(message));
+    setEditingText(message.text || "");
+  };
+
+  const cancelEditingMessage = () => {
+    setEditingId(null);
+    setEditingText("");
+    setSavingEditId(null);
+  };
+
+  const handleSaveEditedMessage = async (message) => {
+    const messageId = getMessageId(message);
+    const trimmed = editingText.trim();
+    if (!messageId || !activeChat || !trimmed || trimmed === (message.text || "").trim()) {
+      cancelEditingMessage();
+      return;
+    }
+
+    setSendError(null);
+    setSavingEditId(messageId);
+
+    try {
+      const result = await emitEditMessage({
+        roomId: activeChat.id,
+        messageId,
+        text: trimmed,
+      });
+
+      if (result?.message) {
+        setMessages((prev) => updateMessageById(prev, result.message));
+      }
+      if (result?.conversation && onConversationUpdated) {
+        onConversationUpdated(result.conversation);
+      }
+      cancelEditingMessage();
+    } catch (err) {
+      if (!socket?.connected) {
+        try {
+          const res = await editMessage(messageId, trimmed);
+          const result = res.data?.data;
+          if (result?.message) {
+            setMessages((prev) => updateMessageById(prev, result.message));
+          }
+          if (result?.conversation && onConversationUpdated) {
+            onConversationUpdated(result.conversation);
+          }
+          cancelEditingMessage();
+        } catch (apiErr) {
+          console.error("Failed to edit message", apiErr);
+          setSendError(
+            apiErr.response?.data?.message || apiErr.message || err.message || "Failed to edit message"
+          );
+        }
+      } else {
+        console.error("Failed to edit message", err);
+        setSendError(err.message || "Failed to edit message");
+      }
+    } finally {
+      setSavingEditId(null);
     }
   };
 
@@ -584,34 +700,123 @@ function ChatArea({
                         lineHeight: 1.5,
                       }}
                     >
-                      {msg.text}
+                      {editingId === getMessageId(msg) ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: isMobile ? 180 : 260 }}>
+                          <textarea
+                            value={editingText}
+                            onChange={(event) => setEditingText(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" && !event.shiftKey) {
+                                event.preventDefault();
+                                handleSaveEditedMessage(msg);
+                              }
+                              if (event.key === "Escape") {
+                                cancelEditingMessage();
+                              }
+                            }}
+                            rows={2}
+                            autoFocus
+                            style={{
+                              width: "100%",
+                              resize: "none",
+                              border: "1px solid rgba(255,255,255,0.22)",
+                              borderRadius: "10px",
+                              background: "rgba(3,8,16,0.22)",
+                              color: "#fff",
+                              padding: "8px 9px",
+                              outline: "none",
+                              fontFamily: "'Inter', sans-serif",
+                              fontSize: isMobile ? "13px" : "13.5px",
+                              lineHeight: 1.45,
+                            }}
+                          />
+                          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                            <button
+                              onClick={cancelEditingMessage}
+                              style={{
+                                border: "1px solid rgba(255,255,255,0.14)",
+                                borderRadius: "9px",
+                                background: "rgba(255,255,255,0.08)",
+                                color: "rgba(255,255,255,0.84)",
+                                padding: "5px 9px",
+                                cursor: "pointer",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleSaveEditedMessage(msg)}
+                              disabled={savingEditId === getMessageId(msg)}
+                              style={{
+                                border: "none",
+                                borderRadius: "9px",
+                                background: "rgba(255,255,255,0.92)",
+                                color: "#075985",
+                                padding: "5px 10px",
+                                cursor: savingEditId === getMessageId(msg) ? "wait" : "pointer",
+                                fontSize: "11px",
+                                fontWeight: 800,
+                              }}
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        msg.text
+                      )}
                     </div>
 
-                    {msg.isMe && !msg.pending && (
-                      <button
-                        onClick={() => handleUndoMessage(msg)}
-                        disabled={undoingIds.has(getMessageId(msg))}
-                        title="Undo message"
-                        style={{
-                          width: 28,
-                          height: 28,
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          borderRadius: "50%",
-                          background: "rgba(255,255,255,0.05)",
-                          color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "rgba(226,232,240,0.78)",
-                          cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                        }}
-                        aria-label="Undo message"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 7v6h6" />
-                          <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
-                        </svg>
-                      </button>
+                    {msg.isMe && !msg.pending && editingId !== getMessageId(msg) && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "5px", flexShrink: 0 }}>
+                        <button
+                          onClick={() => startEditingMessage(msg)}
+                          title="Edit message"
+                          style={{
+                            width: 28,
+                            height: 28,
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            borderRadius: "50%",
+                            background: "rgba(255,255,255,0.05)",
+                            color: "rgba(226,232,240,0.78)",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                          aria-label="Edit message"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handleUndoMessage(msg)}
+                          disabled={undoingIds.has(getMessageId(msg))}
+                          title="Undo message"
+                          style={{
+                            width: 28,
+                            height: 28,
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            borderRadius: "50%",
+                            background: "rgba(255,255,255,0.05)",
+                            color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "rgba(226,232,240,0.78)",
+                            cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                          aria-label="Undo message"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 7v6h6" />
+                            <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+                          </svg>
+                        </button>
+                      </div>
                     )}
                   </div>
 

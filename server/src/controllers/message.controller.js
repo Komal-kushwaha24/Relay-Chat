@@ -15,6 +15,23 @@ const refreshConversationAfterMessageDelete = async (conversation) => {
   };
 };
 
+const refreshConversationAfterMessageChange = async (conversation) => {
+  const latestMessage = await Message.findOne({ conversation: conversation._id })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const lastMessage = latestMessage?.text || '';
+  if (conversation.lastMessage !== lastMessage) {
+    conversation.lastMessage = lastMessage;
+    await conversation.save();
+  }
+
+  return {
+    lastMessage: conversation.lastMessage,
+    updatedAt: conversation.updatedAt,
+  };
+};
+
 export const getMessages = async (req, res) => {
   try {
     const { conversationId } = req.params;
@@ -212,6 +229,100 @@ export const undoMessage = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to undo message',
+    });
+  }
+};
+
+export const editMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { text } = req.body;
+
+    if (!messageId || !text?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message ID and text are required',
+      });
+    }
+
+    const message = await Message.findById(messageId);
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found',
+      });
+    }
+
+    if (message.sender.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only edit your own messages',
+      });
+    }
+
+    const conversation = await Conversation.findById(message.conversation);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Conversation not found',
+      });
+    }
+
+    const isParticipant = conversation.participants.some(
+      (p) => p.toString() === req.user._id.toString()
+    );
+    if (!isParticipant) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to edit this message',
+      });
+    }
+
+    message.text = text.trim();
+    await message.save();
+
+    const conversationUpdate = await refreshConversationAfterMessageChange(conversation);
+    const updatedMessage = {
+      _id: message._id.toString(),
+      sender: message.sender.toString(),
+      conversation: message.conversation.toString(),
+      text: message.text,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+    };
+
+    conversation.participants.forEach((participant) => {
+      const participantId = participant.toString();
+      req.app?.get('io')?.to(`user:${participantId}`).emit('chat:message:updated', {
+        roomId: conversation._id.toString(),
+        message: updatedMessage,
+        conversation: {
+          conversationId: conversation._id.toString(),
+          ...conversationUpdate,
+        },
+      });
+      req.app?.get('io')?.to(`user:${participantId}`).emit('conversation:update', {
+        conversationId: conversation._id.toString(),
+        lastMessage: conversationUpdate.lastMessage,
+        updatedAt: conversationUpdate.updatedAt,
+        unreadCount: conversation.unreadCounts?.get(participantId) || 0,
+      });
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        message: updatedMessage,
+        conversation: {
+          conversationId: conversation._id,
+          ...conversationUpdate,
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to edit message',
     });
   }
 };

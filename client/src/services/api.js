@@ -83,6 +83,9 @@ export const sendMessage = (conversationId, text) =>
 export const undoMessage = (messageId) =>
   api.delete(`/messages/${messageId}`);
 
+export const editMessage = (messageId, text) =>
+  api.patch(`/messages/${messageId}`, { text });
+
 // ─── Message Requests ───────────────────────────────────────────────────────
 export const getMessageRequests = () =>
   api.get('/messages/requests');
