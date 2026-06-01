@@ -92,6 +92,7 @@ function ChatArea({
   const [typingUsers, setTypingUsers] = useState([]);
   const typingTimeoutRef = useRef(null);
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [deleteMenuId, setDeleteMenuId] = useState(null);
   useEffect(() => {
     onConversationUpdatedRef.current = onConversationUpdated;
   }, [onConversationUpdated]);
@@ -773,7 +774,10 @@ function ChatArea({
                     {msg.isMe && !msg.pending && editingId !== getMessageId(msg) && (
                       <div style={{ position: "relative", flexShrink: 0 }}>
                         <button
-                          onClick={() => setOpenMenuId(openMenuId === getMessageId(msg) ? null : getMessageId(msg))}
+                          onClick={() => {
+                            setOpenMenuId(openMenuId === getMessageId(msg) ? null : getMessageId(msg));
+                            setDeleteMenuId(null);
+                          }}
                           style={{
                             width: 28,
                             height: 28,
@@ -808,75 +812,102 @@ function ChatArea({
                             border: "1px solid rgba(255,255,255,0.08)",
                             zIndex: 10,
                           }}>
-                            <button
-                              onClick={() => { startEditingMessage(msg); setOpenMenuId(null); }}
-                              title="Edit message"
-                              style={{
-                                width: 28,
-                                height: 28,
-                                border: "none",
-                                borderRadius: "4px",
-                                background: "rgba(255,255,255,0.05)",
-                                color: "rgba(226,232,240,0.78)",
-                                cursor: "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                              aria-label="Edit message"
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M12 20h9" />
-                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => { handleUndoMessage(msg, 'me'); setOpenMenuId(null); }}
-                              disabled={undoingIds.has(getMessageId(msg))}
-                              title="Delete for me"
-                              style={{
-                                width: 28,
-                                height: 28,
-                                border: "none",
-                                borderRadius: "4px",
-                                background: "rgba(255,255,255,0.05)",
-                                color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "rgba(226,232,240,0.78)",
-                                cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                              aria-label="Delete for me"
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M3 6h18" />
-                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => { handleUndoMessage(msg, 'everyone'); setOpenMenuId(null); }}
-                              disabled={undoingIds.has(getMessageId(msg))}
-                              title="Delete for everyone"
-                              style={{
-                                width: 28,
-                                height: 28,
-                                border: "none",
-                                borderRadius: "4px",
-                                background: "rgba(255,255,255,0.05)",
-                                color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "rgba(226,232,240,0.78)",
-                                cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                              aria-label="Delete for everyone"
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M3 7v6h6" />
-                                <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
-                              </svg>
-                            </button>
+                            {deleteMenuId !== getMessageId(msg) ? (
+                              <>
+                                <button
+                                  onClick={() => { startEditingMessage(msg); setOpenMenuId(null); }}
+                                  title="Edit message"
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    background: "rgba(255,255,255,0.05)",
+                                    color: "rgba(226,232,240,0.78)",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                  aria-label="Edit message"
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 20h9" />
+                                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => setDeleteMenuId(getMessageId(msg))}
+                                  title="Delete message"
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    background: "rgba(255,255,255,0.05)",
+                                    color: "rgba(226,232,240,0.78)",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                  aria-label="Delete message options"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 6h18" />
+                                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                                  </svg>
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => { handleUndoMessage(msg, 'me'); setOpenMenuId(null); setDeleteMenuId(null); }}
+                                  disabled={undoingIds.has(getMessageId(msg))}
+                                  title="Delete for me"
+                                  style={{
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    background: "rgba(255,255,255,0.05)",
+                                    color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "rgba(226,232,240,0.78)",
+                                    cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    padding: "4px 8px",
+                                    fontSize: "12px",
+                                    fontFamily: "'Inter', sans-serif",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  aria-label="Delete for me"
+                                >
+                                  For me
+                                </button>
+                                <button
+                                  onClick={() => { handleUndoMessage(msg, 'everyone'); setOpenMenuId(null); setDeleteMenuId(null); }}
+                                  disabled={undoingIds.has(getMessageId(msg))}
+                                  title="Delete for everyone"
+                                  style={{
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    background: "rgba(255,255,255,0.05)",
+                                    color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "#ef4444",
+                                    cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    padding: "4px 8px",
+                                    fontSize: "12px",
+                                    fontFamily: "'Inter', sans-serif",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  aria-label="Delete for everyone"
+                                >
+                                  For everyone
+                                </button>
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
