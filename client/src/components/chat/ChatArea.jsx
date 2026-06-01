@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 
 import Avatar from "../common/Avatar";
 import EmptyState from "./EmptyState";
-import { editMessage, getMessages, sendMessage, undoMessage } from "../../services/api";
+import { editMessage, getMessages, sendMessage, undoMessage, getUsers, createConversation } from "../../services/api";
 import { getSocket } from "../../services/socket";
 
 const getMessageId = (message) =>
@@ -93,6 +93,16 @@ function ChatArea({
   const typingTimeoutRef = useRef(null);
   const [openMenuId, setOpenMenuId] = useState(null);
   const [deleteMenuId, setDeleteMenuId] = useState(null);
+  const [forwardMessage, setForwardMessage] = useState(null);
+  const [isForwarding, setIsForwarding] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
+
+  useEffect(() => {
+    if (forwardMessage && allUsers.length === 0) {
+      getUsers().then(res => setAllUsers(res.data?.data || [])).catch(console.error);
+    }
+  }, [forwardMessage, allUsers.length]);
+
   useEffect(() => {
     onConversationUpdatedRef.current = onConversationUpdated;
   }, [onConversationUpdated]);
@@ -396,6 +406,57 @@ function ChatArea({
         setMessages((prev) => prev.filter((msg) => msg.tempId !== tempId));
         setSendError(err.message || "Failed to send message");
       }
+    }
+  };
+
+  const handleForwardToUser = async (targetUserId) => {
+    if (!forwardMessage) return;
+    setIsForwarding(true);
+    try {
+      let targetConvId = null;
+      const existingConv = conversations.find(c => 
+        !c.isGroup && c.participants?.some(p => p._id === targetUserId || p.id === targetUserId)
+      );
+      
+      if (existingConv) {
+        targetConvId = existingConv._id || existingConv.id;
+      } else {
+        const myId = currentUser?._id || currentUser?.id;
+        const res = await createConversation([myId, targetUserId]);
+        targetConvId = res.data?.data?._id;
+      }
+      
+      if (targetConvId) {
+        const payload = {
+          roomId: targetConvId,
+          text: forwardMessage.text,
+        };
+        
+        let sentMessage;
+        try {
+          sentMessage = await emitChatMessage(payload);
+        } catch (err) {
+          if (!socket?.connected) {
+            const sendRes = await sendMessage(targetConvId, forwardMessage.text);
+            sentMessage = sendRes.data?.data ?? null;
+          } else {
+            throw err;
+          }
+        }
+        
+        if (sentMessage && onConversationUpdated) {
+          onConversationUpdated({
+            conversationId: targetConvId,
+            lastMessage: sentMessage.text,
+            updatedAt: sentMessage.createdAt || new Date().toISOString(),
+          });
+        }
+        setForwardMessage(null);
+      }
+    } catch (error) {
+      console.error("Failed to forward message:", error);
+    } finally {
+      setIsForwarding(false);
     }
   };
 
@@ -837,6 +898,28 @@ function ChatArea({
                                   </svg>
                                 </button>
                                 <button
+                                  onClick={() => { setForwardMessage(msg); setOpenMenuId(null); setDeleteMenuId(null); }}
+                                  title="Forward message"
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    background: "rgba(255,255,255,0.05)",
+                                    color: "rgba(226,232,240,0.78)",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                  aria-label="Forward message"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="15 14 20 9 15 4" />
+                                    <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
+                                  </svg>
+                                </button>
+                                <button
                                   onClick={() => setDeleteMenuId(getMessageId(msg))}
                                   title="Delete message"
                                   style={{
@@ -998,6 +1081,84 @@ function ChatArea({
             </div>
         </div>
       </div>
+      
+      {forwardMessage && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            background: '#0f172a', borderRadius: '16px', padding: '24px', width: '90%', maxWidth: '400px',
+            border: '1px solid rgba(255,255,255,0.1)',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#f8fafc', fontSize: '18px', fontWeight: '600' }}>Forward Message</h3>
+            <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {allUsers.length === 0 && (
+                <div style={{ color: '#94a3b8', textAlign: 'center', padding: '20px 0' }}>Loading users...</div>
+              )}
+              {allUsers.map(user => {
+                const name = user.username || user.fullName || 'Unknown';
+                
+                return (
+                  <div 
+                    key={user._id}
+                    onClick={() => {
+                      if (!isForwarding) {
+                        handleForwardToUser(user._id);
+                      }
+                    }}
+                    style={{ 
+                      padding: '12px 16px', 
+                      borderRadius: '8px',
+                      background: 'rgba(255,255,255,0.03)',
+                      cursor: isForwarding ? 'wait' : 'pointer', 
+                      color: '#e2e8f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      transition: 'background 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      if(!isForwarding) e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if(!isForwarding) e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                    }}
+                  >
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '50%', background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '14px'
+                    }}>
+                      {name.charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ fontWeight: '500' }}>{name}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <button 
+              onClick={() => setForwardMessage(null)} 
+              disabled={isForwarding}
+              style={{ 
+                padding: '10px 16px', borderRadius: '8px', background: 'rgba(255,255,255,0.08)', 
+                color: '#fff', border: 'none', cursor: isForwarding ? 'wait' : 'pointer', width: '100%',
+                fontWeight: '600', transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                if(!isForwarding) e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+              }}
+              onMouseLeave={(e) => {
+                if(!isForwarding) e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       </div>
     </motion.div>
   );
