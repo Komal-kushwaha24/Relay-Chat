@@ -228,7 +228,7 @@ export const registerChatHandlers = (io, socket) => {
   });
 
   socket.on('chat:message:undo', async (payload, callback) => {
-    const { roomId, messageId } = payload ?? {};
+    const { roomId, messageId, type } = payload ?? {};
 
     if (!roomId || !messageId) {
       callback?.({ success: false, message: 'roomId and messageId are required' });
@@ -259,6 +259,22 @@ export const registerChatHandlers = (io, socket) => {
 
       if (message.sender.toString() !== socket.data.user.id) {
         callback?.({ success: false, message: 'You can only undo your own messages' });
+        return;
+      }
+
+      if (type === 'me') {
+        if (!message.deletedFor) message.deletedFor = [];
+        if (!message.deletedFor.includes(socket.data.user.id)) {
+          message.deletedFor.push(socket.data.user.id);
+          await message.save();
+        }
+        const deletedPayload = {
+          roomId,
+          messageId: message._id.toString(),
+          type: 'me',
+        };
+        io.to(`user:${socket.data.user.id}`).emit('chat:message:deleted', deletedPayload);
+        callback?.({ success: true, data: deletedPayload });
         return;
       }
 

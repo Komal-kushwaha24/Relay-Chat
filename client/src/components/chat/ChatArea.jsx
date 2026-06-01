@@ -398,7 +398,7 @@ function ChatArea({
     }
   };
 
-  const handleUndoMessage = async (message) => {
+  const handleUndoMessage = async (message, type = 'everyone') => {
     const messageId = getMessageId(message);
     if (!messageId || !activeChat || message.pending) return;
 
@@ -409,6 +409,7 @@ function ChatArea({
       const result = await emitUndoMessage({
         roomId: activeChat.id,
         messageId,
+        type,
       });
 
       setMessages((prev) => removeMessageById(prev, messageId));
@@ -418,7 +419,7 @@ function ChatArea({
     } catch (err) {
       if (!socket?.connected) {
         try {
-          const res = await undoMessage(messageId);
+          const res = await undoMessage(messageId, type);
           const deleted = res.data?.data;
           setMessages((prev) => removeMessageById(prev, messageId));
           if (deleted && onConversationUpdated) {
@@ -830,9 +831,9 @@ function ChatArea({
                               </svg>
                             </button>
                             <button
-                              onClick={() => { handleUndoMessage(msg); setOpenMenuId(null); }}
+                              onClick={() => { handleUndoMessage(msg, 'me'); setOpenMenuId(null); }}
                               disabled={undoingIds.has(getMessageId(msg))}
-                              title="Undo message"
+                              title="Delete for me"
                               style={{
                                 width: 28,
                                 height: 28,
@@ -845,7 +846,31 @@ function ChatArea({
                                 alignItems: "center",
                                 justifyContent: "center",
                               }}
-                              aria-label="Undo message"
+                              aria-label="Delete for me"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18" />
+                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => { handleUndoMessage(msg, 'everyone'); setOpenMenuId(null); }}
+                              disabled={undoingIds.has(getMessageId(msg))}
+                              title="Delete for everyone"
+                              style={{
+                                width: 28,
+                                height: 28,
+                                border: "none",
+                                borderRadius: "4px",
+                                background: "rgba(255,255,255,0.05)",
+                                color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "rgba(226,232,240,0.78)",
+                                cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                              aria-label="Delete for everyone"
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M3 7v6h6" />

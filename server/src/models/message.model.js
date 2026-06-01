@@ -18,6 +18,12 @@ const messageSchema = new mongoose.Schema(
       required: [true, 'Message text is required'],
       trim: true,
     },
+    deletedFor: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
   },
   {
     timestamps: true,

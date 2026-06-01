@@ -80,8 +80,8 @@ export const getMessages = (conversationId) =>
 export const sendMessage = (conversationId, text) =>
   api.post('/messages', { conversationId, text });
 
-export const undoMessage = (messageId) =>
-  api.delete(`/messages/${messageId}`);
+export const undoMessage = (messageId, type = 'everyone') =>
+  api.delete(`/messages/${messageId}?type=${type}`);
 
 export const editMessage = (messageId, text) =>
   api.patch(`/messages/${messageId}`, { text });
