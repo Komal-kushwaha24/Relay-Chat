@@ -91,7 +91,7 @@ function ChatArea({
   const onConversationUpdatedRef = useRef(onConversationUpdated);
   const [typingUsers, setTypingUsers] = useState([]);
   const typingTimeoutRef = useRef(null);
-
+  const [openMenuId, setOpenMenuId] = useState(null);
   useEffect(() => {
     onConversationUpdatedRef.current = onConversationUpdated;
   }, [onConversationUpdated]);
@@ -770,52 +770,90 @@ function ChatArea({
                     </div>
 
                     {msg.isMe && !msg.pending && editingId !== getMessageId(msg) && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "5px", flexShrink: 0 }}>
+                      <div style={{ position: "relative", flexShrink: 0 }}>
                         <button
-                          onClick={() => startEditingMessage(msg)}
-                          title="Edit message"
+                          onClick={() => setOpenMenuId(openMenuId === getMessageId(msg) ? null : getMessageId(msg))}
                           style={{
                             width: 28,
                             height: 28,
-                            border: "1px solid rgba(255,255,255,0.08)",
-                            borderRadius: "50%",
-                            background: "rgba(255,255,255,0.05)",
+                            border: "none",
+                            background: "transparent",
                             color: "rgba(226,232,240,0.78)",
                             cursor: "pointer",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
                           }}
-                          aria-label="Edit message"
+                          aria-label="Message options"
                         >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 20h9" />
-                            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="12" cy="5" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="12" cy="19" r="2" />
                           </svg>
                         </button>
-                        <button
-                          onClick={() => handleUndoMessage(msg)}
-                          disabled={undoingIds.has(getMessageId(msg))}
-                          title="Undo message"
-                          style={{
-                            width: 28,
-                            height: 28,
-                            border: "1px solid rgba(255,255,255,0.08)",
-                            borderRadius: "50%",
-                            background: "rgba(255,255,255,0.05)",
-                            color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "rgba(226,232,240,0.78)",
-                            cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
+                        
+                        {openMenuId === getMessageId(msg) && (
+                          <div style={{
+                            position: "absolute",
+                            right: "32px",
+                            top: 0,
                             display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                          aria-label="Undo message"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 7v6h6" />
-                            <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
-                          </svg>
-                        </button>
+                            flexDirection: "row",
+                            gap: "5px",
+                            background: "rgba(7,18,40,0.95)",
+                            padding: "4px",
+                            borderRadius: "8px",
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            zIndex: 10,
+                          }}>
+                            <button
+                              onClick={() => { startEditingMessage(msg); setOpenMenuId(null); }}
+                              title="Edit message"
+                              style={{
+                                width: 28,
+                                height: 28,
+                                border: "none",
+                                borderRadius: "4px",
+                                background: "rgba(255,255,255,0.05)",
+                                color: "rgba(226,232,240,0.78)",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                              aria-label="Edit message"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => { handleUndoMessage(msg); setOpenMenuId(null); }}
+                              disabled={undoingIds.has(getMessageId(msg))}
+                              title="Undo message"
+                              style={{
+                                width: 28,
+                                height: 28,
+                                border: "none",
+                                borderRadius: "4px",
+                                background: "rgba(255,255,255,0.05)",
+                                color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "rgba(226,232,240,0.78)",
+                                cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                              aria-label="Undo message"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 7v6h6" />
+                                <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+                              </svg>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
