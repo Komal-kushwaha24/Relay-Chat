@@ -257,7 +257,7 @@ export default function ProfilePage({ mode = "page", onClose, onProfileUpdated }
 
                     {profile.profilePicture && (
                       <div style={{ color: "#94a3b8", fontSize: 12 }}>
-                        Current avatar is loaded from Cloudinary.
+                        {/* Current avatar is loaded from Cloudinary. */}
                       </div>
                     )}
 
