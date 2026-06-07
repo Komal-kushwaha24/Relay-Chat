@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 
 import useIsMobile from "../hooks/useIsMobile";
 
@@ -88,6 +89,11 @@ export default function HomePage() {
   const [showProfile, setShowProfile] = useState(false);
   const [messageRequests, setMessageRequests] = useState([]);
   const [sentMessageRequests, setSentMessageRequests] = useState([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [chatToDelete, setChatToDelete] = useState(null);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
+  const [successToast, setSuccessToast] = useState(null);
+  const conversationsRef = useRef([]);
 
   const openProfile = () => setShowProfile(true);
   const closeProfile = () => setShowProfile(false);
@@ -118,6 +124,18 @@ export default function HomePage() {
       setDrawerOpen(false);
     }
   }, [isMobile]);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    if (!successToast) return;
+    const timeoutId = setTimeout(() => {
+      setSuccessToast(null);
+    }, 3000);
+    return () => clearTimeout(timeoutId);
+  }, [successToast]);
   useEffect(() => {
     const socket = getSocket();
     const handleConnect = () => {
@@ -324,6 +342,8 @@ export default function HomePage() {
 
   const handleConversationUpdated = (update) => {
     if (!update?.conversationId) return;
+    const currentId = currentUser?._id?.toString() || currentUser?.id?.toString();
+
     setConversations((prevConversations) =>
       sortConversations(
         prevConversations.map((conversation) => {
@@ -416,21 +436,38 @@ export default function HomePage() {
     await reloadConversations();
   };
 
-  const handleDeleteConversation = async (conversationId) => {
+  const requestDeleteConversation = (conversationId) => {
     if (!conversationId) return;
+    setChatToDelete(conversationId);
+    setShowDeleteConfirm(true);
+  };
 
+  const confirmDeleteConversation = async () => {
+    if (!chatToDelete || isDeletingConversation) return;
+
+    setIsDeletingConversation(true);
     try {
-      await deleteConversation(conversationId);
+      await deleteConversation(chatToDelete);
       setConversations((prev) =>
-        (prev || []).filter((conversation) => {
+        (prev || []).map((conversation) => {
           const id = conversation._id?.toString?.() || conversation.id?.toString?.();
-          return id !== conversationId?.toString?.();
+          if (id === chatToDelete?.toString?.()) {
+            return {
+              ...conversation,
+              lastMessage: "",
+            };
+          }
+          return conversation;
         })
       );
-      setActiveId((current) => (current === conversationId ? null : current));
+      setSuccessToast("Conversation deleted successfully");
     } catch (err) {
       console.error("Failed to delete conversation", err);
       alert(err.response?.data?.message || err.message || "Failed to delete conversation");
+    } finally {
+      setIsDeletingConversation(false);
+      setShowDeleteConfirm(false);
+      setChatToDelete(null);
     }
   };
 
@@ -482,7 +519,7 @@ export default function HomePage() {
             onMenuOpen={() => setDrawerOpen(true)}
             activeChat={activeChat}
             onBack={() => setActiveId(null)}
-            onDeleteConversation={handleDeleteConversation}
+            onDeleteConversation={requestDeleteConversation}
           />
 
           <div className="flex-1 overflow-hidden">
@@ -493,8 +530,10 @@ export default function HomePage() {
               currentUser={currentUser}
               conversations={conversations}
               onConversationUpdated={handleConversationUpdated}
-              onConversationDeleted={handleDeleteConversation}
+              onConversationDeleted={requestDeleteConversation}
               sentRequests={sentMessageRequests}
+
+
               setSentRequests={setSentMessageRequests}
               onExitChat={() => setActiveId(null)}
             />
@@ -525,7 +564,7 @@ export default function HomePage() {
               currentUser={currentUser}
               conversations={conversations}
               onConversationUpdated={handleConversationUpdated}
-              onConversationDeleted={handleDeleteConversation}
+              onConversationDeleted={requestDeleteConversation}
               sentRequests={sentMessageRequests}
               setSentRequests={setSentMessageRequests}
               onExitChat={() => setActiveId(null)}
@@ -541,6 +580,96 @@ export default function HomePage() {
           onProfileUpdated={(u) => setCurrentUser(u)}
         />
       )}
+
+      {showDeleteConfirm && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            background: '#0f172a', borderRadius: '16px', padding: '24px', width: '90%', maxWidth: '400px',
+            border: '1px solid rgba(255,255,255,0.1)',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#f8fafc', fontSize: '18px', fontWeight: '600' }}>Delete Conversation</h3>
+            <p style={{ color: '#cbd5e1', marginBottom: '24px', fontSize: '15px', lineHeight: '1.5' }}>
+              Delete this conversation for you? The other user will still keep their chat.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => setShowDeleteConfirm(false)} 
+                disabled={isDeletingConversation}
+                style={{ 
+                  padding: '10px 16px', borderRadius: '8px', background: 'rgba(255,255,255,0.08)', 
+                  color: '#fff', border: 'none', cursor: isDeletingConversation ? 'wait' : 'pointer',
+                  fontWeight: '600', transition: 'background 0.2s'
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmDeleteConversation} 
+                disabled={isDeletingConversation}
+                style={{ 
+                  padding: '10px 16px', borderRadius: '8px', background: '#ef4444', 
+                  color: '#fff', border: 'none', cursor: isDeletingConversation ? 'wait' : 'pointer',
+                  fontWeight: '600', transition: 'background 0.2s'
+                }}
+              >
+                {isDeletingConversation ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {successToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -18, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -14, scale: 0.96 }}
+            transition={{ duration: 0.25 }}
+            style={{
+              position: "fixed",
+              bottom: "20px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 10000,
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "11px 18px",
+              borderRadius: "14px",
+              background: "rgba(7,18,40,0.94)",
+              border: "1px solid rgba(34,211,238,0.25)",
+              boxShadow: "0 0 24px rgba(34,211,238,0.15)",
+              color: "#e2e8f0",
+              fontFamily: "'Outfit', sans-serif",
+              fontWeight: 600,
+              fontSize: "14px",
+            }}
+          >
+            <span style={{
+              width: 24,
+              height: 24,
+              borderRadius: "50%",
+              background: "linear-gradient(135deg, #22c55e, #10b981)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+            }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+            {successToast}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

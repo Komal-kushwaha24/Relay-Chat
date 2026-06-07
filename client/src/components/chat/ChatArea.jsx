@@ -102,7 +102,7 @@ function ChatArea({
   const [forwardMessage, setForwardMessage] = useState(null);
   const [isForwarding, setIsForwarding] = useState(false);
   const [forwardToastKey, setForwardToastKey] = useState(0);
-  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
+
 
   useEffect(() => {
     if (!forwardToastKey) {
@@ -161,6 +161,12 @@ function ChatArea({
       mounted = false;
     };
   }, [activeChat?.id]);
+
+  useEffect(() => {
+    if (activeChat?.msg === "No messages yet") {
+      setMessages([]);
+    }
+  }, [activeChat?.msg]);
 
   useEffect(() => {
     const roomId = activeChat?.id;
@@ -520,23 +526,9 @@ function ChatArea({
     }
   };
 
-  const handleDeleteConversation = async () => {
-    if (!activeChat?.id || !onConversationDeleted || isDeletingConversation) return;
-
-    const confirmed = window.confirm(
-      "Delete this conversation for you? The other user will still keep their chat."
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setIsDeletingConversation(true);
-    try {
-      await onConversationDeleted(activeChat.id);
-    } finally {
-      setIsDeletingConversation(false);
-    }
+  const handleDeleteConversation = () => {
+    if (!activeChat?.id || !onConversationDeleted) return;
+    onConversationDeleted(activeChat.id);
   };
 
   const handleUndoMessage = async (message, type = 'everyone') => {
@@ -799,15 +791,14 @@ function ChatArea({
           {onConversationDeleted && (
             <button
               onClick={handleDeleteConversation}
-              disabled={isDeletingConversation}
               style={{
                 border: "1px solid rgba(248,113,113,0.2)",
                 background: "rgba(248,113,113,0.08)",
-                color: isDeletingConversation ? "rgba(248,113,113,0.45)" : "#f87171",
+                color: "#f87171",
                 width: 36,
                 height: 36,
                 borderRadius: 12,
-                cursor: isDeletingConversation ? "wait" : "pointer",
+                cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1291,6 +1282,8 @@ function ChatArea({
           </div>
         </div>
       )}
+      
+
       {forwardToastKey > 0 && (
         <motion.div
           key={forwardToastKey}

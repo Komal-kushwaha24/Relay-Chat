@@ -4,14 +4,7 @@ import Avatar from "../common/Avatar";
 function MobileTopBar({ onMenuOpen, activeChat, onBack, onDeleteConversation }) {
   const handleDeleteConversation = () => {
     if (!activeChat?.id || !onDeleteConversation) return;
-
-    const confirmed = window.confirm(
-      "Delete this conversation for you? The other user will still keep their chat."
-    );
-
-    if (confirmed) {
-      onDeleteConversation(activeChat.id);
-    }
+    onDeleteConversation(activeChat.id);
   };
 
   return (

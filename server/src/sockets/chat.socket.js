@@ -214,6 +214,8 @@ export const registerChatHandlers = (io, socket) => {
         const participantId = participant.toString();
         const conversationUpdate = {
           conversationId: roomId,
+          type: 'message',
+          senderId: createdMessage.sender.toString(),
           lastMessage: createdMessage.text,
           updatedAt: conversation.updatedAt,
           unreadCount: conversation.unreadCounts?.get(participantId) || 0,

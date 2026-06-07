@@ -96,10 +96,10 @@ export const deleteConversationForUser = async (req, res) => {
       }
     );
 
-    conversation.hiddenFor = conversation.hiddenFor || [];
-    if (!conversation.hiddenFor.some((userId) => userId.toString() === req.user.id)) {
-      conversation.hiddenFor.push(req.user._id);
-    }
+    // conversation.hiddenFor = conversation.hiddenFor || [];
+    // if (!conversation.hiddenFor.some((userId) => userId.toString() === req.user.id)) {
+    //   conversation.hiddenFor.push(req.user._id);
+    // }
 
     conversation.unreadCounts = conversation.unreadCounts || new Map();
     conversation.unreadCounts.set(req.user.id, 0);
