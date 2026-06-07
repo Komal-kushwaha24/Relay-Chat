@@ -63,6 +63,9 @@ export const getConversations = () =>
 export const createConversation = (participants) =>
   api.post('/conversations', { participants });
 
+export const deleteConversation = (conversationId) =>
+  api.delete(`/conversations/${conversationId}`);
+
 // ─── Messages ────────────────────────────────────────────────────────────────
 
 /**

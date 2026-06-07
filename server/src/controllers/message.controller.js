@@ -121,6 +121,7 @@ export const getMessages = async (req, res) => {
         });
 
         conversation.lastMessage = message.text;
+        conversation.hiddenFor = [];
         conversation.unreadCounts = conversation.unreadCounts || new Map();
         conversation.participants.forEach((participant) => {
           const participantId = participant.toString();
@@ -346,4 +347,3 @@ export const getMessages = async (req, res) => {
         });
       }
     };
-

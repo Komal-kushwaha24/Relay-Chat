@@ -180,6 +180,7 @@ export const registerChatHandlers = (io, socket) => {
       });
 
       conversation.lastMessage = createdMessage.text;
+      conversation.hiddenFor = [];
       conversation.unreadCounts = conversation.unreadCounts || new Map();
       conversation.participants.forEach((participant) => {
         const participantId = participant.toString();

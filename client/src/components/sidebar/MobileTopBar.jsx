@@ -1,7 +1,19 @@
 import { motion } from "framer-motion";
 import Avatar from "../common/Avatar";
 
-function MobileTopBar({ onMenuOpen, activeChat, onBack }) {
+function MobileTopBar({ onMenuOpen, activeChat, onBack, onDeleteConversation }) {
+  const handleDeleteConversation = () => {
+    if (!activeChat?.id || !onDeleteConversation) return;
+
+    const confirmed = window.confirm(
+      "Delete this conversation for you? The other user will still keep their chat."
+    );
+
+    if (confirmed) {
+      onDeleteConversation(activeChat.id);
+    }
+  };
+
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: "12px",
@@ -77,26 +89,31 @@ function MobileTopBar({ onMenuOpen, activeChat, onBack }) {
       </div>
  
       {/* Right action */}
-      {activeChat ? (
+      {activeChat && onDeleteConversation ? (
         <div style={{ display: "flex", gap: "6px" }}>
           <motion.button
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.93 }}
+            onClick={handleDeleteConversation}
+            title="Delete conversation"
+            aria-label="Delete conversation"
             style={{
               width: 32,
               height: 32,
               borderRadius: "9px",
-              border: "1px solid rgba(255,255,255,0.07)",
-              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(248,113,113,0.2)",
+              background: "rgba(248,113,113,0.08)",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "rgba(100,116,139,0.6)",
+              color: "#f87171",
             }}
           >
             <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.67A2 2 0 012 .14h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 14.92z" />
+              <path d="M3 6h18" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </motion.button>
         </div>

@@ -8,7 +8,7 @@ import MobileTopBar from "../components/sidebar/MobileTopBar";
 
 import ChatArea from "../components/chat/ChatArea";
 import ProfilePage from "./ProfilePage";
-import { getCurrentUser, getConversations, getMessageRequests, getSentMessageRequests } from "../services/api";
+import { deleteConversation, getCurrentUser, getConversations, getMessageRequests, getSentMessageRequests } from "../services/api";
 import { getSocket } from "../services/socket";
 
 const getInitials = (name) => {
@@ -416,6 +416,24 @@ export default function HomePage() {
     await reloadConversations();
   };
 
+  const handleDeleteConversation = async (conversationId) => {
+    if (!conversationId) return;
+
+    try {
+      await deleteConversation(conversationId);
+      setConversations((prev) =>
+        (prev || []).filter((conversation) => {
+          const id = conversation._id?.toString?.() || conversation.id?.toString?.();
+          return id !== conversationId?.toString?.();
+        })
+      );
+      setActiveId((current) => (current === conversationId ? null : current));
+    } catch (err) {
+      console.error("Failed to delete conversation", err);
+      alert(err.response?.data?.message || err.message || "Failed to delete conversation");
+    }
+  };
+
   const handleRequestAccepted = async (conversation) => {
     const id = conversation?._id || conversation?.id;
     if (!id) return;
@@ -464,6 +482,7 @@ export default function HomePage() {
             onMenuOpen={() => setDrawerOpen(true)}
             activeChat={activeChat}
             onBack={() => setActiveId(null)}
+            onDeleteConversation={handleDeleteConversation}
           />
 
           <div className="flex-1 overflow-hidden">
@@ -474,6 +493,7 @@ export default function HomePage() {
               currentUser={currentUser}
               conversations={conversations}
               onConversationUpdated={handleConversationUpdated}
+              onConversationDeleted={handleDeleteConversation}
               sentRequests={sentMessageRequests}
               setSentRequests={setSentMessageRequests}
               onExitChat={() => setActiveId(null)}
@@ -505,6 +525,7 @@ export default function HomePage() {
               currentUser={currentUser}
               conversations={conversations}
               onConversationUpdated={handleConversationUpdated}
+              onConversationDeleted={handleDeleteConversation}
               sentRequests={sentMessageRequests}
               setSentRequests={setSentMessageRequests}
               onExitChat={() => setActiveId(null)}

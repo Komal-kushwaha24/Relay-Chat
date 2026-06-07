@@ -79,6 +79,7 @@ function ChatArea({
   currentUser,
   conversations,
   onConversationUpdated,
+  onConversationDeleted,
   sentRequests,
   setSentRequests,
   onExitChat,
@@ -101,6 +102,7 @@ function ChatArea({
   const [forwardMessage, setForwardMessage] = useState(null);
   const [isForwarding, setIsForwarding] = useState(false);
   const [forwardToastKey, setForwardToastKey] = useState(0);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
 
   useEffect(() => {
     if (!forwardToastKey) {
@@ -518,6 +520,25 @@ function ChatArea({
     }
   };
 
+  const handleDeleteConversation = async () => {
+    if (!activeChat?.id || !onConversationDeleted || isDeletingConversation) return;
+
+    const confirmed = window.confirm(
+      "Delete this conversation for you? The other user will still keep their chat."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingConversation(true);
+    try {
+      await onConversationDeleted(activeChat.id);
+    } finally {
+      setIsDeletingConversation(false);
+    }
+  };
+
   const handleUndoMessage = async (message, type = 'everyone') => {
     const messageId = getMessageId(message);
     if (!messageId || !activeChat || message.pending) return;
@@ -774,6 +795,33 @@ function ChatArea({
               {activeChat.online ? "Active now" : "Offline"}
             </div>
           </div>
+
+          {onConversationDeleted && (
+            <button
+              onClick={handleDeleteConversation}
+              disabled={isDeletingConversation}
+              style={{
+                border: "1px solid rgba(248,113,113,0.2)",
+                background: "rgba(248,113,113,0.08)",
+                color: isDeletingConversation ? "rgba(248,113,113,0.45)" : "#f87171",
+                width: 36,
+                height: 36,
+                borderRadius: 12,
+                cursor: isDeletingConversation ? "wait" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              title="Delete conversation"
+              aria-label="Delete conversation"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18" />
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+              </svg>
+            </button>
+          )}
         </div>
       )}
 
