@@ -59,6 +59,11 @@ const updateMessageById = (existing = [], incoming) =>
       : message
   );
 
+const getLastVisibleMessage = (existing = []) =>
+  existing
+    .filter((message) => !message.pending)
+    .at(-1);
+
 const formatTime = (value) => {
   if (!value) return "";
   return new Date(value).toLocaleTimeString([], {
@@ -187,7 +192,21 @@ function ChatArea({
         return;
       }
 
-      setMessages((prev) => removeMessageById(prev, payload.messageId));
+      setMessages((prev) => {
+        const next = removeMessageById(prev, payload.messageId);
+        if (payload.type === 'me' && onConversationUpdatedRef.current) {
+          const latestMessage = getLastVisibleMessage(next);
+          onConversationUpdatedRef.current({
+            conversationId: roomId,
+            lastMessage: latestMessage?.text || "",
+            updatedAt:
+              latestMessage?.createdAt ||
+              activeChat?.conversation?.updatedAt ||
+              activeChat?.conversation?.createdAt,
+          });
+        }
+        return next;
+      });
       if (payload.conversation && onConversationUpdatedRef.current) {
         onConversationUpdatedRef.current(payload.conversation);
       }
@@ -513,7 +532,21 @@ function ChatArea({
         type,
       });
 
-      setMessages((prev) => removeMessageById(prev, messageId));
+      setMessages((prev) => {
+        const next = removeMessageById(prev, messageId);
+        if (type === 'me' && onConversationUpdated) {
+          const latestMessage = getLastVisibleMessage(next);
+          onConversationUpdated({
+            conversationId: activeChat.id,
+            lastMessage: latestMessage?.text || "",
+            updatedAt:
+              latestMessage?.createdAt ||
+              activeChat?.conversation?.updatedAt ||
+              activeChat?.conversation?.createdAt,
+          });
+        }
+        return next;
+      });
       if (result?.conversation && onConversationUpdated) {
         onConversationUpdated(result.conversation);
       }
@@ -522,10 +555,24 @@ function ChatArea({
         try {
           const res = await undoMessage(messageId, type);
           const deleted = res.data?.data;
-          setMessages((prev) => removeMessageById(prev, messageId));
+          setMessages((prev) => {
+            const next = removeMessageById(prev, messageId);
+            if (type === 'me' && onConversationUpdated) {
+              const latestMessage = getLastVisibleMessage(next);
+              onConversationUpdated({
+                conversationId: activeChat.id,
+                lastMessage: latestMessage?.text || "",
+                updatedAt:
+                  latestMessage?.createdAt ||
+                  activeChat?.conversation?.updatedAt ||
+                  activeChat?.conversation?.createdAt,
+              });
+            }
+            return next;
+          });
           if (deleted && onConversationUpdated) {
             onConversationUpdated({
-              conversationId: deleted.conversationId,
+              conversationId: deleted.conversationId?.toString?.() || deleted.conversationId,
               lastMessage: deleted.lastMessage,
               updatedAt: deleted.updatedAt,
             });
