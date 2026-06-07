@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 
 import Avatar from "../common/Avatar";
 import EmptyState from "./EmptyState";
-import { editMessage, getMessages, sendMessage, undoMessage, getUsers, createConversation } from "../../services/api";
+import { editMessage, getMessages, sendMessage, undoMessage } from "../../services/api";
 import { getSocket } from "../../services/socket";
 
 const getMessageId = (message) =>
@@ -95,13 +95,19 @@ function ChatArea({
   const [deleteMenuId, setDeleteMenuId] = useState(null);
   const [forwardMessage, setForwardMessage] = useState(null);
   const [isForwarding, setIsForwarding] = useState(false);
-  const [allUsers, setAllUsers] = useState([]);
+  const [forwardToastKey, setForwardToastKey] = useState(0);
 
   useEffect(() => {
-    if (forwardMessage && allUsers.length === 0) {
-      getUsers().then(res => setAllUsers(res.data?.data || [])).catch(console.error);
+    if (!forwardToastKey) {
+      return;
     }
-  }, [forwardMessage, allUsers.length]);
+
+    const timeoutId = setTimeout(() => {
+      setForwardToastKey(0);
+    }, 2200);
+
+    return () => clearTimeout(timeoutId);
+  }, [forwardToastKey]);
 
   useEffect(() => {
     onConversationUpdatedRef.current = onConversationUpdated;
@@ -332,6 +338,51 @@ function ChatArea({
     [messages, currentUser]
   );
 
+  const forwardTargets = useMemo(() => {
+    const currentId = currentUser?._id?.toString?.() || currentUser?.id?.toString?.();
+    const seen = new Set();
+
+    return (conversations || []).reduce((targets, conversation) => {
+      if (!conversation || conversation.isGroup) {
+        return targets;
+      }
+
+      const conversationId = conversation._id?.toString?.() || conversation.id?.toString?.();
+      if (!conversationId) {
+        return targets;
+      }
+
+      const other = (conversation.participants || []).find((participant) => {
+        const participantId =
+          participant?._id?.toString?.() ||
+          participant?.id?.toString?.() ||
+          participant?.toString?.();
+
+        return participantId && participantId !== currentId;
+      });
+
+      const otherId =
+        other?._id?.toString?.() ||
+        other?.id?.toString?.() ||
+        other?.toString?.();
+
+      if (!otherId || seen.has(otherId)) {
+        return targets;
+      }
+
+      seen.add(otherId);
+      const name = other?.username || other?.fullName || other?.email || "Unknown user";
+
+      targets.push({
+        userId: otherId,
+        conversationId,
+        name,
+      });
+
+      return targets;
+    }, []);
+  }, [conversations, currentUser]);
+
   const handleSendMessage = async () => {
     const trimmed = newMessage.trim();
     if (!trimmed || !activeChat) return;
@@ -409,26 +460,13 @@ function ChatArea({
     }
   };
 
-  const handleForwardToUser = async (targetUserId) => {
+  const handleForwardToUser = async (targetConversationId) => {
     if (!forwardMessage) return;
     setIsForwarding(true);
     try {
-      let targetConvId = null;
-      const existingConv = conversations.find(c => 
-        !c.isGroup && c.participants?.some(p => p._id === targetUserId || p.id === targetUserId)
-      );
-      
-      if (existingConv) {
-        targetConvId = existingConv._id || existingConv.id;
-      } else {
-        const myId = currentUser?._id || currentUser?.id;
-        const res = await createConversation([myId, targetUserId]);
-        targetConvId = res.data?.data?._id;
-      }
-      
-      if (targetConvId) {
+      if (targetConversationId) {
         const payload = {
-          roomId: targetConvId,
+          roomId: targetConversationId,
           text: forwardMessage.text,
         };
         
@@ -437,7 +475,7 @@ function ChatArea({
           sentMessage = await emitChatMessage(payload);
         } catch (err) {
           if (!socket?.connected) {
-            const sendRes = await sendMessage(targetConvId, forwardMessage.text);
+            const sendRes = await sendMessage(targetConversationId, forwardMessage.text);
             sentMessage = sendRes.data?.data ?? null;
           } else {
             throw err;
@@ -446,12 +484,13 @@ function ChatArea({
         
         if (sentMessage && onConversationUpdated) {
           onConversationUpdated({
-            conversationId: targetConvId,
+            conversationId: targetConversationId,
             lastMessage: sentMessage.text,
             updatedAt: sentMessage.createdAt || new Date().toISOString(),
           });
         }
         setForwardMessage(null);
+        setForwardToastKey((key) => key + 1);
       }
     } catch (error) {
       console.error("Failed to forward message:", error);
@@ -1096,18 +1135,16 @@ function ChatArea({
           }}>
             <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#f8fafc', fontSize: '18px', fontWeight: '600' }}>Forward Message</h3>
             <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {allUsers.length === 0 && (
-                <div style={{ color: '#94a3b8', textAlign: 'center', padding: '20px 0' }}>Loading users...</div>
+              {forwardTargets.length === 0 && (
+                <div style={{ color: '#94a3b8', textAlign: 'center', padding: '20px 0' }}>No existing chats available.</div>
               )}
-              {allUsers.map(user => {
-                const name = user.username || user.fullName || 'Unknown';
-                
+              {forwardTargets.map(user => {
                 return (
                   <div 
-                    key={user._id}
+                    key={user.conversationId}
                     onClick={() => {
                       if (!isForwarding) {
-                        handleForwardToUser(user._id);
+                        handleForwardToUser(user.conversationId);
                       }
                     }}
                     style={{ 
@@ -1132,9 +1169,9 @@ function ChatArea({
                       width: '36px', height: '36px', borderRadius: '50%', background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '14px'
                     }}>
-                      {name.charAt(0).toUpperCase()}
+                      {user.name.charAt(0).toUpperCase()}
                     </div>
-                    <div style={{ fontWeight: '500' }}>{name}</div>
+                    <div style={{ fontWeight: '500' }}>{user.name}</div>
                   </div>
                 );
               })}
@@ -1158,6 +1195,50 @@ function ChatArea({
             </button>
           </div>
         </div>
+      )}
+      {forwardToastKey > 0 && (
+        <motion.div
+          key={forwardToastKey}
+          initial={{ opacity: 0, y: -18, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -14, scale: 0.96 }}
+          transition={{ duration: 0.25 }}
+          style={{
+            position: "fixed",
+            top: "20px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            padding: "11px 18px",
+            borderRadius: "14px",
+            background: "rgba(7,18,40,0.94)",
+            border: "1px solid rgba(34,211,238,0.25)",
+            boxShadow: "0 0 24px rgba(34,211,238,0.15)",
+            color: "#e2e8f0",
+            fontFamily: "'Outfit', sans-serif",
+            fontWeight: 600,
+            fontSize: "13px",
+          }}
+        >
+          <span style={{
+            width: 22,
+            height: 22,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #0ea5e9, #22d3ee)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#fff",
+          }}>
+            <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          Message forwarded successfully
+        </motion.div>
       )}
       </div>
     </motion.div>
