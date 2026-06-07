@@ -241,9 +241,22 @@ export default function HomePage() {
       });
     };
 
+    // When the recipient rejects/deletes our request, remove it from
+    // sentMessageRequests so the sender can see the "Message" button again
+    const handleMessageRequestRejected = (payload) => {
+      if (!payload?.requestId) return;
+      setSentMessageRequests((prev) =>
+        (prev || []).filter((request) => {
+          const requestId = request._id?.toString?.() || request.id?.toString?.();
+          return requestId !== payload.requestId?.toString?.();
+        })
+      );
+    };
+
     socket.on('messageRequest:received', handleMessageRequestReceived);
     socket.on('messageRequest:cancelled', handleMessageRequestCancelled);
     socket.on('messageRequest:accepted', handleMessageRequestAccepted);
+    socket.on('messageRequest:rejected', handleMessageRequestRejected);
     socket.on('user:updated', (u) => {
       if (!u || !u.id) return;
       const updatedId = u.id || u._id;
@@ -321,6 +334,7 @@ export default function HomePage() {
       socket.off('messageRequest:received', handleMessageRequestReceived);
       socket.off('messageRequest:cancelled', handleMessageRequestCancelled);
       socket.off('messageRequest:accepted', handleMessageRequestAccepted);
+      socket.off('messageRequest:rejected', handleMessageRequestRejected);
       socket.off('user:updated');
       socket.off("connect_error", handleConnectError);
       socket.disconnect();

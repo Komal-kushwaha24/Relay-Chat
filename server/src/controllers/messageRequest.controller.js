@@ -251,8 +251,19 @@ export const deleteMessageRequest = async (req, res) => {
     const request = user.messageRequests.id(requestId);
     if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
 
+    const senderId = request.from?.toString();
+
     user.messageRequests.pull({ _id: requestId });
     await user.save();
+
+    // Notify the original sender that their request was rejected
+    // so they can re-send if they want
+    if (senderId) {
+      req.app?.get('io')?.to(`user:${senderId}`).emit('messageRequest:rejected', {
+        requestId,
+        rejectedBy: user._id.toString(),
+      });
+    }
 
     res.status(200).json({ success: true });
   } catch (error) {
