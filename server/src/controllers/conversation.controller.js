@@ -1,7 +1,11 @@
 import Conversation from '../models/conversation.model.js';
+import Message from '../models/message.model.js';
 
 export const getUserConversations = async (req, res) => {
-  const conversations = await Conversation.find({ participants: req.user.id })
+  const conversations = await Conversation.find({
+    participants: req.user.id,
+    hiddenFor: { $ne: req.user.id },
+  })
     .populate('participants', 'fullName email profilePicture')
     .sort({ updatedAt: -1 });
 
@@ -28,6 +32,11 @@ export const createConversation = async (req, res) => {
     });
 
     if (existingConversation) {
+      existingConversation.hiddenFor = (existingConversation.hiddenFor || []).filter(
+        (userId) => userId.toString() !== req.user.id
+      );
+      await existingConversation.save();
+
       return res.status(200).json({
         success: true,
         data: existingConversation,
@@ -50,6 +59,62 @@ export const createConversation = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+
+export const deleteConversationForUser = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Conversation not found',
+      });
+    }
+
+    const isParticipant = conversation.participants.some(
+      (participant) => participant.toString() === req.user.id
+    );
+
+    if (!isParticipant) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to delete this conversation',
+      });
+    }
+
+    await Message.updateMany(
+      {
+        conversation: conversation._id,
+        deletedFor: { $ne: req.user._id },
+      },
+      {
+        $addToSet: { deletedFor: req.user._id },
+      }
+    );
+
+    // conversation.hiddenFor = conversation.hiddenFor || [];
+    // if (!conversation.hiddenFor.some((userId) => userId.toString() === req.user.id)) {
+    //   conversation.hiddenFor.push(req.user._id);
+    // }
+
+    conversation.unreadCounts = conversation.unreadCounts || new Map();
+    conversation.unreadCounts.set(req.user.id, 0);
+    await conversation.save();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        conversationId: conversation._id,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to delete conversation',
     });
   }
 };

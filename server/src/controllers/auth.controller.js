@@ -281,6 +281,7 @@ export const updateMe = async (req, res) => {
         };
 
         io.emit('user:updated', payload);
+        io.updateOnlineUser?.(payload);
       }
     } catch (e) {
       // non-fatal

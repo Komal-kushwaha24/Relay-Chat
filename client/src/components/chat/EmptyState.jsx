@@ -1,12 +1,16 @@
 import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
-import { getUsers, createConversation } from "../../services/api";
+import { getUsers, createMessageRequest, cancelSentMessageRequest } from "../../services/api";
 
-function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], onConversationCreated }) {
+function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], sentRequests = [], setSentRequests }) {
   const [showUsers, setShowUsers] = useState(false);
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState(null);
+  const [activeRequestUserId, setActiveRequestUserId] = useState(null);
+  const [requestText, setRequestText] = useState("");
+  const [sendingRequest, setSendingRequest] = useState(false);
+  const [requestNotice, setRequestNotice] = useState(null);
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -57,24 +61,87 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], 
     });
   }, [users, existingParticipantIds]);
 
-  const handleStartConversation = async (user) => {
+  const sentRequestsByUserId = useMemo(() => {
+    const map = new Map();
+    (sentRequests || []).forEach((request) => {
+      const toId = request.to?._id ?? request.to?.id ?? request.to;
+      if (toId) {
+        map.set(toId.toString(), request);
+      }
+    });
+    return map;
+  }, [sentRequests]);
+
+  const handleSendRequest = async (user) => {
     if (!currentUser?._id && !currentUser?.id) {
       alert("Current user not available. Please login.");
       return;
     }
 
-    const myId = currentUser._id ?? currentUser.id;
     const otherId = user._id ?? user.id;
+    const trimmed = requestText.trim();
 
+    if (!trimmed) {
+      setRequestNotice({ type: "error", text: "Write a message before sending the request." });
+      return;
+    }
+
+    setSendingRequest(true);
+    setRequestNotice(null);
     try {
-      const res = await createConversation([myId, otherId]);
-      const conversation = res.data?.data ?? res.data ?? null;
-      if (conversation && onConversationCreated) {
-        onConversationCreated(conversation);
+      const res = await createMessageRequest(otherId, trimmed);
+      const sentRequest = res.data?.data;
+      if (sentRequest && setSentRequests) {
+        setSentRequests((prev) => {
+          const toId = sentRequest.to?._id ?? sentRequest.to?.id ?? sentRequest.to;
+          const requestId = sentRequest._id?.toString?.() || sentRequest.id?.toString?.();
+          const next = (prev || []).filter((request) => {
+            const existingToId = request.to?._id ?? request.to?.id ?? request.to;
+            const existingRequestId = request._id?.toString?.() || request.id?.toString?.();
+            return existingRequestId !== requestId && existingToId?.toString?.() !== toId?.toString?.();
+          });
+          return [sentRequest, ...next];
+        });
       }
+      setRequestNotice({ type: "success", text: `Request sent to ${user.fullName || user.name}.` });
+      setRequestText("");
+      setActiveRequestUserId(null);
     } catch (err) {
-      console.error("Failed to create conversation", err);
-      alert("Failed to create conversation");
+      console.error("Failed to send request", err);
+      setRequestNotice({
+        type: "error",
+        text: err.response?.data?.message || err.message || "Failed to send request",
+      });
+    } finally {
+      setSendingRequest(false);
+    }
+  };
+
+  const handleCancelRequest = async (request) => {
+    const requestId = request?._id || request?.id;
+    if (!requestId) return;
+
+    setSendingRequest(true);
+    setRequestNotice(null);
+    try {
+      await cancelSentMessageRequest(requestId);
+      if (setSentRequests) {
+        setSentRequests((prev) =>
+          (prev || []).filter((item) => {
+            const itemId = item._id?.toString?.() || item.id?.toString?.();
+            return itemId !== requestId.toString();
+          })
+        );
+      }
+      setRequestNotice({ type: "success", text: "Request cancelled." });
+    } catch (err) {
+      console.error("Failed to cancel request", err);
+      setRequestNotice({
+        type: "error",
+        text: err.response?.data?.message || err.message || "Failed to cancel request",
+      });
+    } finally {
+      setSendingRequest(false);
     }
   };
 
@@ -220,6 +287,11 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], 
 
             {loadingUsers && <div style={{ color: "rgba(148,163,184,0.8)" }}>Loading users...</div>}
             {usersError && <div style={{ color: "#f87171" }}>{usersError}</div>}
+            {requestNotice && (
+              <div style={{ color: requestNotice.type === "error" ? "#f87171" : "#22d3ee", marginBottom: 10, fontSize: 13 }}>
+                {requestNotice.text}
+              </div>
+            )}
 
             {!loadingUsers && availableUsers.length === 0 && !usersError && (
               <div style={{ color: "rgba(148,163,184,0.8)" }}>No users found</div>
@@ -227,18 +299,78 @@ function EmptyState({ onOpenSidebar, isMobile, currentUser, conversations = [], 
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {availableUsers.map((user) => (
-                <div key={user._id ?? user.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.02)" }}>
-                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#0ea5e9,#22d3ee)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700 }}>{(user.fullName || user.name || "?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
-                    <div>
-                      <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{user.fullName || user.name}</div>
-                      <div style={{ color: "rgba(148,163,184,0.7)", fontSize: 12 }}>{user.email}</div>
+                <div key={user._id ?? user.id} style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.02)" }}>
+                  {(() => {
+                    const userId = user._id ?? user.id;
+                    const sentRequest = userId ? sentRequestsByUserId.get(userId.toString()) : null;
+
+                    return (
+                      <>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0 }}>
+                      <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 10, background: "linear-gradient(135deg,#0ea5e9,#22d3ee)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700 }}>{(user.fullName || user.name || "?").split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{user.fullName || user.name}</div>
+                        <div style={{ color: "rgba(148,163,184,0.7)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis" }}>{user.email}</div>
+                      </div>
                     </div>
+
+                    {sentRequest ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ color: "rgba(34,211,238,0.9)", fontSize: 12, fontWeight: 700 }}>Pending</span>
+                        <button
+                          disabled={sendingRequest}
+                          onClick={() => handleCancelRequest(sentRequest)}
+                          style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "rgba(248,113,113,0.95)", cursor: sendingRequest ? "default" : "pointer", fontWeight: 600 }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const id = user._id ?? user.id;
+                          setActiveRequestUserId((current) => current === id ? null : id);
+                          setRequestNotice(null);
+                        }}
+                        style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "rgba(34,211,238,0.12)", color: "rgba(34,211,238,0.95)", cursor: "pointer", fontWeight: 600 }}
+                      >
+                        Message
+                      </button>
+                    )}
                   </div>
 
-                  <div>
-                    <button onClick={() => handleStartConversation(user)} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "rgba(34,211,238,0.12)", color: "rgba(34,211,238,0.95)", cursor: "pointer", fontWeight: 600 }}>Start</button>
-                  </div>
+                  {activeRequestUserId === (user._id ?? user.id) && !sentRequest && (
+                    <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "flex-end" }}>
+                      <textarea
+                        value={requestText}
+                        onChange={(event) => setRequestText(event.target.value)}
+                        placeholder="Send a message request..."
+                        rows={2}
+                        style={{
+                          flex: 1,
+                          resize: "none",
+                          borderRadius: 10,
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          background: "rgba(255,255,255,0.04)",
+                          color: "#e2e8f0",
+                          padding: "9px 10px",
+                          outline: "none",
+                          fontSize: 13,
+                        }}
+                      />
+                      <button
+                        disabled={sendingRequest}
+                        onClick={() => handleSendRequest(user)}
+                        style={{ padding: "9px 12px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#0ea5e9,#22d3ee)", color: "#fff", cursor: sendingRequest ? "default" : "pointer", fontWeight: 700, opacity: sendingRequest ? 0.7 : 1 }}
+                      >
+                        Send
+                      </button>
+                    </div>
+                  )}
+                      </>
+                    );
+                  })()}
                 </div>
               ))}
             </div>

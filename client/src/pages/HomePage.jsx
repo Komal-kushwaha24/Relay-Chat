@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 
 import useIsMobile from "../hooks/useIsMobile";
 
@@ -8,7 +9,7 @@ import MobileTopBar from "../components/sidebar/MobileTopBar";
 
 import ChatArea from "../components/chat/ChatArea";
 import ProfilePage from "./ProfilePage";
-import { getCurrentUser, getConversations } from "../services/api";
+import { deleteConversation, getCurrentUser, getConversations, getMessageRequests, getSentMessageRequests } from "../services/api";
 import { getSocket } from "../services/socket";
 
 const getInitials = (name) => {
@@ -86,6 +87,13 @@ export default function HomePage() {
   const [conversationTyping, setConversationTyping] = useState({});
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [messageRequests, setMessageRequests] = useState([]);
+  const [sentMessageRequests, setSentMessageRequests] = useState([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [chatToDelete, setChatToDelete] = useState(null);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
+  const [successToast, setSuccessToast] = useState(null);
+  const conversationsRef = useRef([]);
 
   const openProfile = () => setShowProfile(true);
   const closeProfile = () => setShowProfile(false);
@@ -116,6 +124,18 @@ export default function HomePage() {
       setDrawerOpen(false);
     }
   }, [isMobile]);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    if (!successToast) return;
+    const timeoutId = setTimeout(() => {
+      setSuccessToast(null);
+    }, 3000);
+    return () => clearTimeout(timeoutId);
+  }, [successToast]);
   useEffect(() => {
     const socket = getSocket();
     const handleConnect = () => {
@@ -128,12 +148,24 @@ export default function HomePage() {
       const currentId = currentUser?._id?.toString() || currentUser?.id?.toString();
       const online = Array.isArray(users) ? users.filter((user) => user.id !== currentId) : [];
       setOnlineUsers(
-        online.map((user) => ({
-          ...user,
-          avatar: getInitials(user.name),
-          color: getAvatarColor(user.name),
-          profilePicture: user.profilePicture || null,
-        }))
+        online.map((user) => {
+          const name = user.name || user.fullName || user.email || "Unknown user";
+          const avatarSrc =
+            user.profilePicture ||
+            user.avatarSrc ||
+            user.profilePic ||
+            user.avatarUrl ||
+            null;
+
+          return {
+            ...user,
+            name,
+            avatar: getInitials(name),
+            color: getAvatarColor(name),
+            profilePicture: avatarSrc,
+            avatarSrc,
+          };
+        })
       );
     };
 
@@ -166,6 +198,52 @@ export default function HomePage() {
     socket.on("online:users", handleOnlineUsers);
     socket.on("conversation:update", handleConversationUpdated);
     socket.on("conversation:typing", handleConversationTyping);
+    const handleMessageRequestReceived = (payload) => {
+      // add incoming request to local state
+      if (!payload) return;
+      setMessageRequests((prev) => {
+        const requestId = payload._id?.toString?.() || payload.id?.toString?.();
+        const payloadSender = payload.from?.toString?.();
+        const withoutDuplicate = (prev || []).filter((request) => {
+          const existingId = request._id?.toString?.() || request.id?.toString?.();
+          const existingSender = request.from?.toString?.();
+          return existingId !== requestId && existingSender !== payloadSender;
+        });
+
+        return [payload, ...withoutDuplicate];
+      });
+    };
+
+    const handleMessageRequestCancelled = (payload) => {
+      if (!payload?.requestId) return;
+      setMessageRequests((prev) =>
+        (prev || []).filter((request) => {
+          const requestId = request._id?.toString?.() || request.id?.toString?.();
+          return requestId !== payload.requestId?.toString?.();
+        })
+      );
+    };
+
+    const handleMessageRequestAccepted = async (payload) => {
+      const conversation = payload?.conversation;
+      const id = conversation?._id || conversation?.id;
+      if (!id) return;
+
+      setSentMessageRequests((prev) =>
+        (prev || []).filter((request) => {
+          const requestId = request._id?.toString?.() || request.id?.toString?.();
+          return requestId !== payload.requestId?.toString?.();
+        })
+      );
+      setConversations((prev) => {
+        const exists = (prev || []).some((item) => (item._id || item.id) === id);
+        return exists ? prev : [conversation, ...(prev || [])];
+      });
+    };
+
+    socket.on('messageRequest:received', handleMessageRequestReceived);
+    socket.on('messageRequest:cancelled', handleMessageRequestCancelled);
+    socket.on('messageRequest:accepted', handleMessageRequestAccepted);
     socket.on('user:updated', (u) => {
       if (!u || !u.id) return;
       const updatedId = u.id || u._id;
@@ -191,6 +269,7 @@ export default function HomePage() {
                 avatar: getInitials(u.fullName || item.name),
                 color: getAvatarColor(u.fullName || item.name),
                 profilePicture: u.profilePicture || item.profilePicture,
+                avatarSrc: u.profilePicture || u.avatarSrc || item.avatarSrc || null,
               }
             : item
         )
@@ -220,6 +299,17 @@ export default function HomePage() {
 
     if (currentUser) {
       socket.connect();
+      // fetch existing requests
+      (async () => {
+        try {
+          const res = await getMessageRequests();
+          setMessageRequests(res.data?.data || []);
+          const sentRes = await getSentMessageRequests();
+          setSentMessageRequests(sentRes.data?.data || []);
+        } catch {
+          // ignore
+        }
+      })();
     }
 
     return () => {
@@ -228,6 +318,9 @@ export default function HomePage() {
       socket.off("online:users", handleOnlineUsers);
       socket.off("conversation:update", handleConversationUpdated);
       socket.off("conversation:typing", handleConversationTyping);
+      socket.off('messageRequest:received', handleMessageRequestReceived);
+      socket.off('messageRequest:cancelled', handleMessageRequestCancelled);
+      socket.off('messageRequest:accepted', handleMessageRequestAccepted);
       socket.off('user:updated');
       socket.off("connect_error", handleConnectError);
       socket.disconnect();
@@ -249,6 +342,8 @@ export default function HomePage() {
 
   const handleConversationUpdated = (update) => {
     if (!update?.conversationId) return;
+    const currentId = currentUser?._id?.toString() || currentUser?.id?.toString();
+
     setConversations((prevConversations) =>
       sortConversations(
         prevConversations.map((conversation) => {
@@ -314,12 +409,20 @@ export default function HomePage() {
   }, [conversations, currentUser, onlineConversationUsers, conversationTyping]);
 
   const filteredChats = useMemo(() => {
-    const q = search.toLowerCase();
-    return chats.filter(
-      (chat) =>
-        chat.name.toLowerCase().includes(q) ||
-        chat.msg.toLowerCase().includes(q)
-    );
+    const q = (search || "").trim().toLowerCase();
+    if (!q) return chats;
+
+    const tokens = q.split(/\s+/).filter(Boolean);
+
+    return chats.filter((chat) => {
+      const name = (chat.name || "").toLowerCase();
+      const words = name.split(/\s+/).filter(Boolean);
+
+      // require every token to match start of any word in the name
+      return tokens.every((token) =>
+        words.some((w) => w.startsWith(token))
+      );
+    });
   }, [search, chats]);
 
   const activeChat = useMemo(
@@ -327,19 +430,56 @@ export default function HomePage() {
     [chats, activeId]
   );
 
-  const handleConversationCreated = async (conversation) => {
+  const handleOpenConversationById = async (conversationId) => {
+    if (!conversationId) return;
+    setActiveId(conversationId);
+    await reloadConversations();
+  };
+
+  const requestDeleteConversation = (conversationId) => {
+    if (!conversationId) return;
+    setChatToDelete(conversationId);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteConversation = async () => {
+    if (!chatToDelete || isDeletingConversation) return;
+
+    setIsDeletingConversation(true);
+    try {
+      await deleteConversation(chatToDelete);
+      setConversations((prev) =>
+        (prev || []).map((conversation) => {
+          const id = conversation._id?.toString?.() || conversation.id?.toString?.();
+          if (id === chatToDelete?.toString?.()) {
+            return {
+              ...conversation,
+              lastMessage: "",
+            };
+          }
+          return conversation;
+        })
+      );
+      setSuccessToast("Conversation deleted successfully");
+    } catch (err) {
+      console.error("Failed to delete conversation", err);
+      alert(err.response?.data?.message || err.message || "Failed to delete conversation");
+    } finally {
+      setIsDeletingConversation(false);
+      setShowDeleteConfirm(false);
+      setChatToDelete(null);
+    }
+  };
+
+  const handleRequestAccepted = async (conversation) => {
     const id = conversation?._id || conversation?.id;
     if (!id) return;
 
-    setActiveId(id);
     setConversations((prev) => {
-      const existing = prev?.find(
-        (item) => (item._id ?? item.id) === id
-      );
-      if (existing) return prev;
-      return sortConversations([conversation, ...(prev || [])]);
+      const exists = (prev || []).some((item) => (item._id || item.id) === id);
+      return sortConversations(exists ? prev : [conversation, ...(prev || [])]);
     });
-
+    setActiveId(id);
     await reloadConversations();
   };
 
@@ -368,12 +508,18 @@ export default function HomePage() {
             currentUser={currentUser}
             onlineUsers={onlineConversationUsers}
             onProfileOpen={openProfile}
+            onUserClick={handleOpenConversationById}
+            messageRequestCount={messageRequests.length}
+            messageRequests={messageRequests}
+            setMessageRequests={setMessageRequests}
+            onRequestAccepted={handleRequestAccepted}
           />
 
           <MobileTopBar
             onMenuOpen={() => setDrawerOpen(true)}
             activeChat={activeChat}
             onBack={() => setActiveId(null)}
+            onDeleteConversation={requestDeleteConversation}
           />
 
           <div className="flex-1 overflow-hidden">
@@ -384,7 +530,11 @@ export default function HomePage() {
               currentUser={currentUser}
               conversations={conversations}
               onConversationUpdated={handleConversationUpdated}
-              onConversationCreated={handleConversationCreated}
+              onConversationDeleted={requestDeleteConversation}
+              sentRequests={sentMessageRequests}
+
+
+              setSentRequests={setSentMessageRequests}
               onExitChat={() => setActiveId(null)}
             />
           </div>
@@ -400,6 +550,11 @@ export default function HomePage() {
             currentUser={currentUser}
             onlineUsers={onlineConversationUsers}
             onProfileOpen={openProfile}
+            onUserClick={handleOpenConversationById}
+            messageRequestCount={messageRequests.length}
+            messageRequests={messageRequests}
+            setMessageRequests={setMessageRequests}
+            onRequestAccepted={handleRequestAccepted}
           />
 
           <div className="flex-1 overflow-hidden">
@@ -409,7 +564,9 @@ export default function HomePage() {
               currentUser={currentUser}
               conversations={conversations}
               onConversationUpdated={handleConversationUpdated}
-              onConversationCreated={handleConversationCreated}
+              onConversationDeleted={requestDeleteConversation}
+              sentRequests={sentMessageRequests}
+              setSentRequests={setSentMessageRequests}
               onExitChat={() => setActiveId(null)}
             />
           </div>
@@ -423,6 +580,96 @@ export default function HomePage() {
           onProfileUpdated={(u) => setCurrentUser(u)}
         />
       )}
+
+      {showDeleteConfirm && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            background: '#0f172a', borderRadius: '16px', padding: '24px', width: '90%', maxWidth: '400px',
+            border: '1px solid rgba(255,255,255,0.1)',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#f8fafc', fontSize: '18px', fontWeight: '600' }}>Delete Conversation</h3>
+            <p style={{ color: '#cbd5e1', marginBottom: '24px', fontSize: '15px', lineHeight: '1.5' }}>
+              Delete this conversation for you? The other user will still keep their chat.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => setShowDeleteConfirm(false)} 
+                disabled={isDeletingConversation}
+                style={{ 
+                  padding: '10px 16px', borderRadius: '8px', background: 'rgba(255,255,255,0.08)', 
+                  color: '#fff', border: 'none', cursor: isDeletingConversation ? 'wait' : 'pointer',
+                  fontWeight: '600', transition: 'background 0.2s'
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmDeleteConversation} 
+                disabled={isDeletingConversation}
+                style={{ 
+                  padding: '10px 16px', borderRadius: '8px', background: '#ef4444', 
+                  color: '#fff', border: 'none', cursor: isDeletingConversation ? 'wait' : 'pointer',
+                  fontWeight: '600', transition: 'background 0.2s'
+                }}
+              >
+                {isDeletingConversation ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {successToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -18, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -14, scale: 0.96 }}
+            transition={{ duration: 0.25 }}
+            style={{
+              position: "fixed",
+              bottom: "20px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 10000,
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "11px 18px",
+              borderRadius: "14px",
+              background: "rgba(7,18,40,0.94)",
+              border: "1px solid rgba(34,211,238,0.25)",
+              boxShadow: "0 0 24px rgba(34,211,238,0.15)",
+              color: "#e2e8f0",
+              fontFamily: "'Outfit', sans-serif",
+              fontWeight: 600,
+              fontSize: "14px",
+            }}
+          >
+            <span style={{
+              width: 24,
+              height: 24,
+              borderRadius: "50%",
+              background: "linear-gradient(135deg, #22c55e, #10b981)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+            }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+            {successToast}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

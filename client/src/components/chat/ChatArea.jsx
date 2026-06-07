@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 
 import Avatar from "../common/Avatar";
 import EmptyState from "./EmptyState";
-import { getMessages, sendMessage } from "../../services/api";
+import { editMessage, getMessages, sendMessage, undoMessage } from "../../services/api";
 import { getSocket } from "../../services/socket";
 
 const getMessageId = (message) =>
@@ -49,6 +49,21 @@ const replacePendingMessage = (existing = [], tempId, incoming) => {
   return mergeMessages(existing, [incoming]);
 };
 
+const removeMessageById = (existing = [], messageId) =>
+  existing.filter((message) => getMessageId(message) !== messageId?.toString?.());
+
+const updateMessageById = (existing = [], incoming) =>
+  existing.map((message) =>
+    getMessageId(message) === getMessageId(incoming)
+      ? { ...message, ...incoming }
+      : message
+  );
+
+const getLastVisibleMessage = (existing = []) =>
+  existing
+    .filter((message) => !message.pending)
+    .at(-1);
+
 const formatTime = (value) => {
   if (!value) return "";
   return new Date(value).toLocaleTimeString([], {
@@ -64,17 +79,46 @@ function ChatArea({
   currentUser,
   conversations,
   onConversationUpdated,
-  onConversationCreated,
+  onConversationDeleted,
+  sentRequests,
+  setSentRequests,
   onExitChat,
 }) {
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [sendError, setSendError] = useState(null);
+  const [undoingIds, setUndoingIds] = useState(() => new Set());
+  const [editingId, setEditingId] = useState(null);
+  const [editingText, setEditingText] = useState("");
+  const [savingEditId, setSavingEditId] = useState(null);
   const socket = getSocket();
   const messagesEndRef = useRef(null);
+  const onConversationUpdatedRef = useRef(onConversationUpdated);
   const [typingUsers, setTypingUsers] = useState([]);
   const typingTimeoutRef = useRef(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [deleteMenuId, setDeleteMenuId] = useState(null);
+  const [forwardMessage, setForwardMessage] = useState(null);
+  const [isForwarding, setIsForwarding] = useState(false);
+  const [forwardToastKey, setForwardToastKey] = useState(0);
+
+
+  useEffect(() => {
+    if (!forwardToastKey) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setForwardToastKey(0);
+    }, 2200);
+
+    return () => clearTimeout(timeoutId);
+  }, [forwardToastKey]);
+
+  useEffect(() => {
+    onConversationUpdatedRef.current = onConversationUpdated;
+  }, [onConversationUpdated]);
 
   const emitTyping = (isTyping) => {
     try {
@@ -119,6 +163,12 @@ function ChatArea({
   }, [activeChat?.id]);
 
   useEffect(() => {
+    if (activeChat?.msg === "No messages yet") {
+      setMessages([]);
+    }
+  }, [activeChat?.msg]);
+
+  useEffect(() => {
     const roomId = activeChat?.id;
     if (!roomId) return;
 
@@ -145,6 +195,42 @@ function ChatArea({
       });
     };
 
+    const handleDeletedMessage = (payload) => {
+      if (!payload || payload.roomId !== roomId || !payload.messageId) {
+        return;
+      }
+
+      setMessages((prev) => {
+        const next = removeMessageById(prev, payload.messageId);
+        if (payload.type === 'me' && onConversationUpdatedRef.current) {
+          const latestMessage = getLastVisibleMessage(next);
+          onConversationUpdatedRef.current({
+            conversationId: roomId,
+            lastMessage: latestMessage?.text || "",
+            updatedAt:
+              latestMessage?.createdAt ||
+              activeChat?.conversation?.updatedAt ||
+              activeChat?.conversation?.createdAt,
+          });
+        }
+        return next;
+      });
+      if (payload.conversation && onConversationUpdatedRef.current) {
+        onConversationUpdatedRef.current(payload.conversation);
+      }
+    };
+
+    const handleUpdatedMessage = (payload) => {
+      if (!payload || payload.roomId !== roomId || !payload.message) {
+        return;
+      }
+
+      setMessages((prev) => updateMessageById(prev, payload.message));
+      if (payload.conversation && onConversationUpdatedRef.current) {
+        onConversationUpdatedRef.current(payload.conversation);
+      }
+    };
+
     socket.emit("chat:join", roomId, (response) => {
       if (!response?.success) {
         console.error("Failed to join chat room", response?.message);
@@ -153,14 +239,18 @@ function ChatArea({
 
     socket.on("chat:message", handleIncomingMessage);
     socket.on("chat:typing", handleIncomingTyping);
+    socket.on("chat:message:deleted", handleDeletedMessage);
+    socket.on("chat:message:updated", handleUpdatedMessage);
 
     return () => {
       socket.off("chat:message", handleIncomingMessage);
       socket.off("chat:typing", handleIncomingTyping);
+      socket.off("chat:message:deleted", handleDeletedMessage);
+      socket.off("chat:message:updated", handleUpdatedMessage);
       setTypingUsers([]);
       socket.emit("chat:leave", roomId);
     };
-  }, [activeChat?.id, socket]);
+  }, [activeChat?.id, socket, currentUser]);
 
   const emitChatMessage = (payload) =>
     new Promise((resolve, reject) => {
@@ -195,6 +285,62 @@ function ChatArea({
       });
     });
 
+  const emitUndoMessage = (payload) =>
+    new Promise((resolve, reject) => {
+      if (!socket || !socket.connected) {
+        reject(new Error("Socket is not connected"));
+        return;
+      }
+
+      const timeoutId = setTimeout(() => {
+        reject(new Error("No acknowledgment from server"));
+      }, 5000);
+
+      socket.emit("chat:message:undo", payload, (response) => {
+        clearTimeout(timeoutId);
+
+        if (!response) {
+          reject(new Error("No acknowledgment from server"));
+          return;
+        }
+
+        if (!response.success) {
+          reject(new Error(response.message || "Failed to undo message"));
+          return;
+        }
+
+        resolve(response.data);
+      });
+    });
+
+  const emitEditMessage = (payload) =>
+    new Promise((resolve, reject) => {
+      if (!socket || !socket.connected) {
+        reject(new Error("Socket is not connected"));
+        return;
+      }
+
+      const timeoutId = setTimeout(() => {
+        reject(new Error("No acknowledgment from server"));
+      }, 5000);
+
+      socket.emit("chat:message:edit", payload, (response) => {
+        clearTimeout(timeoutId);
+
+        if (!response) {
+          reject(new Error("No acknowledgment from server"));
+          return;
+        }
+
+        if (!response.success) {
+          reject(new Error(response.message || "Failed to edit message"));
+          return;
+        }
+
+        resolve(response.data);
+      });
+    });
+
   useEffect(() => {
     if (!activeChat) return;
     const element = messagesEndRef.current;
@@ -218,6 +364,51 @@ function ChatArea({
       }),
     [messages, currentUser]
   );
+
+  const forwardTargets = useMemo(() => {
+    const currentId = currentUser?._id?.toString?.() || currentUser?.id?.toString?.();
+    const seen = new Set();
+
+    return (conversations || []).reduce((targets, conversation) => {
+      if (!conversation || conversation.isGroup) {
+        return targets;
+      }
+
+      const conversationId = conversation._id?.toString?.() || conversation.id?.toString?.();
+      if (!conversationId) {
+        return targets;
+      }
+
+      const other = (conversation.participants || []).find((participant) => {
+        const participantId =
+          participant?._id?.toString?.() ||
+          participant?.id?.toString?.() ||
+          participant?.toString?.();
+
+        return participantId && participantId !== currentId;
+      });
+
+      const otherId =
+        other?._id?.toString?.() ||
+        other?.id?.toString?.() ||
+        other?.toString?.();
+
+      if (!otherId || seen.has(otherId)) {
+        return targets;
+      }
+
+      seen.add(otherId);
+      const name = other?.username || other?.fullName || other?.email || "Unknown user";
+
+      targets.push({
+        userId: otherId,
+        conversationId,
+        name,
+      });
+
+      return targets;
+    }, []);
+  }, [conversations, currentUser]);
 
   const handleSendMessage = async () => {
     const trimmed = newMessage.trim();
@@ -296,6 +487,193 @@ function ChatArea({
     }
   };
 
+  const handleForwardToUser = async (targetConversationId) => {
+    if (!forwardMessage) return;
+    setIsForwarding(true);
+    try {
+      if (targetConversationId) {
+        const payload = {
+          roomId: targetConversationId,
+          text: forwardMessage.text,
+        };
+        
+        let sentMessage;
+        try {
+          sentMessage = await emitChatMessage(payload);
+        } catch (err) {
+          if (!socket?.connected) {
+            const sendRes = await sendMessage(targetConversationId, forwardMessage.text);
+            sentMessage = sendRes.data?.data ?? null;
+          } else {
+            throw err;
+          }
+        }
+        
+        if (sentMessage && onConversationUpdated) {
+          onConversationUpdated({
+            conversationId: targetConversationId,
+            lastMessage: sentMessage.text,
+            updatedAt: sentMessage.createdAt || new Date().toISOString(),
+          });
+        }
+        setForwardMessage(null);
+        setForwardToastKey((key) => key + 1);
+      }
+    } catch (error) {
+      console.error("Failed to forward message:", error);
+    } finally {
+      setIsForwarding(false);
+    }
+  };
+
+  const handleDeleteConversation = () => {
+    if (!activeChat?.id || !onConversationDeleted) return;
+    onConversationDeleted(activeChat.id);
+  };
+
+  const handleUndoMessage = async (message, type = 'everyone') => {
+    const messageId = getMessageId(message);
+    if (!messageId || !activeChat || message.pending) return;
+
+    setSendError(null);
+    setUndoingIds((prev) => new Set(prev).add(messageId));
+
+    try {
+      const result = await emitUndoMessage({
+        roomId: activeChat.id,
+        messageId,
+        type,
+      });
+
+      setMessages((prev) => {
+        const next = removeMessageById(prev, messageId);
+        if (type === 'me' && onConversationUpdated) {
+          const latestMessage = getLastVisibleMessage(next);
+          onConversationUpdated({
+            conversationId: activeChat.id,
+            lastMessage: latestMessage?.text || "",
+            updatedAt:
+              latestMessage?.createdAt ||
+              activeChat?.conversation?.updatedAt ||
+              activeChat?.conversation?.createdAt,
+          });
+        }
+        return next;
+      });
+      if (result?.conversation && onConversationUpdated) {
+        onConversationUpdated(result.conversation);
+      }
+    } catch (err) {
+      if (!socket?.connected) {
+        try {
+          const res = await undoMessage(messageId, type);
+          const deleted = res.data?.data;
+          setMessages((prev) => {
+            const next = removeMessageById(prev, messageId);
+            if (type === 'me' && onConversationUpdated) {
+              const latestMessage = getLastVisibleMessage(next);
+              onConversationUpdated({
+                conversationId: activeChat.id,
+                lastMessage: latestMessage?.text || "",
+                updatedAt:
+                  latestMessage?.createdAt ||
+                  activeChat?.conversation?.updatedAt ||
+                  activeChat?.conversation?.createdAt,
+              });
+            }
+            return next;
+          });
+          if (deleted && onConversationUpdated) {
+            onConversationUpdated({
+              conversationId: deleted.conversationId?.toString?.() || deleted.conversationId,
+              lastMessage: deleted.lastMessage,
+              updatedAt: deleted.updatedAt,
+            });
+          }
+        } catch (apiErr) {
+          console.error("Failed to undo message", apiErr);
+          setSendError(
+            apiErr.response?.data?.message || apiErr.message || err.message || "Failed to undo message"
+          );
+        }
+      } else {
+        console.error("Failed to undo message", err);
+        setSendError(err.message || "Failed to undo message");
+      }
+    } finally {
+      setUndoingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(messageId);
+        return next;
+      });
+    }
+  };
+
+  const startEditingMessage = (message) => {
+    if (!message?.isMe || message.pending) return;
+    setSendError(null);
+    setEditingId(getMessageId(message));
+    setEditingText(message.text || "");
+  };
+
+  const cancelEditingMessage = () => {
+    setEditingId(null);
+    setEditingText("");
+    setSavingEditId(null);
+  };
+
+  const handleSaveEditedMessage = async (message) => {
+    const messageId = getMessageId(message);
+    const trimmed = editingText.trim();
+    if (!messageId || !activeChat || !trimmed || trimmed === (message.text || "").trim()) {
+      cancelEditingMessage();
+      return;
+    }
+
+    setSendError(null);
+    setSavingEditId(messageId);
+
+    try {
+      const result = await emitEditMessage({
+        roomId: activeChat.id,
+        messageId,
+        text: trimmed,
+      });
+
+      if (result?.message) {
+        setMessages((prev) => updateMessageById(prev, result.message));
+      }
+      if (result?.conversation && onConversationUpdated) {
+        onConversationUpdated(result.conversation);
+      }
+      cancelEditingMessage();
+    } catch (err) {
+      if (!socket?.connected) {
+        try {
+          const res = await editMessage(messageId, trimmed);
+          const result = res.data?.data;
+          if (result?.message) {
+            setMessages((prev) => updateMessageById(prev, result.message));
+          }
+          if (result?.conversation && onConversationUpdated) {
+            onConversationUpdated(result.conversation);
+          }
+          cancelEditingMessage();
+        } catch (apiErr) {
+          console.error("Failed to edit message", apiErr);
+          setSendError(
+            apiErr.response?.data?.message || apiErr.message || err.message || "Failed to edit message"
+          );
+        }
+      } else {
+        console.error("Failed to edit message", err);
+        setSendError(err.message || "Failed to edit message");
+      }
+    } finally {
+      setSavingEditId(null);
+    }
+  };
+
   const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -325,7 +703,8 @@ function ChatArea({
           isMobile={isMobile}
           currentUser={currentUser}
           conversations={conversations}
-          onConversationCreated={onConversationCreated}
+          sentRequests={sentRequests}
+          setSentRequests={setSentRequests}
         />
       </div>
     );
@@ -375,6 +754,7 @@ function ChatArea({
           )}
 
           <Avatar
+            src={activeChat.avatarSrc}
             initials={activeChat.avatar}
             color={activeChat.color}
             size={38}
@@ -407,6 +787,32 @@ function ChatArea({
               {activeChat.online ? "Active now" : "Offline"}
             </div>
           </div>
+
+          {onConversationDeleted && (
+            <button
+              onClick={handleDeleteConversation}
+              style={{
+                border: "1px solid rgba(248,113,113,0.2)",
+                background: "rgba(248,113,113,0.08)",
+                color: "#f87171",
+                width: 36,
+                height: 36,
+                borderRadius: 12,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              title="Delete conversation"
+              aria-label="Delete conversation"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18" />
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+              </svg>
+            </button>
+          )}
         </div>
       )}
 
@@ -444,33 +850,276 @@ function ChatArea({
                 transition={{ delay: index * 0.05 + 0.1 }}
                 className={`flex items-end gap-2 ${msg.isMe ? "flex-row-reverse" : ""}`}
               >
-                {!msg.isMe && (
-                  <Avatar
-                    initials={activeChat.avatar}
-                    color={activeChat.color}
-                    size={28}
-                    group={activeChat.group}
-                  />
-                )}
+                {!msg.isMe && (() => {
+                  const senderId = msg.sender?.toString?.();
+                  const participant = (activeChat.conversation?.participants || []).find((p) => {
+                    const pid = p?._id ?? p?.id ?? p?.toString?.();
+                    return pid && senderId && pid.toString() === senderId.toString();
+                  });
+                  const src = msg.profilePicture || participant?.profilePicture || activeChat.avatarSrc;
+                  const initials = participant?.fullName ? participant.fullName.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase() : activeChat.avatar;
+
+                  return (
+                    <Avatar
+                      src={src}
+                      initials={initials}
+                      color={activeChat.color}
+                      size={28}
+                      group={activeChat.group}
+                    />
+                  );
+                })()}
 
                 <div style={{ maxWidth: isMobile ? "75%" : "60%" }}>
-                  <div
-                    style={{
-                      padding: "10px 14px",
-                      borderRadius: msg.isMe ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                      background: msg.isMe
-                        ? "linear-gradient(135deg, #0ea5e9, #0891b2)"
-                        : "rgba(255,255,255,0.06)",
-                      border: msg.isMe ? "none" : "1px solid rgba(255,255,255,0.07)",
-                      boxShadow: msg.isMe ? "0 0 16px rgba(14,165,233,0.25)" : "none",
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: isMobile ? "13px" : "13.5px",
-                      color: msg.isMe ? "#fff" : "#cbd5e1",
-                      fontWeight: 300,
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {msg.text}
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", flexDirection: msg.isMe ? "row-reverse" : "row" }}>
+                    <div
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: msg.isMe ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                        background: msg.isMe
+                          ? "linear-gradient(135deg, #0ea5e9, #0891b2)"
+                          : "rgba(255,255,255,0.06)",
+                        border: msg.isMe ? "none" : "1px solid rgba(255,255,255,0.07)",
+                        boxShadow: msg.isMe ? "0 0 16px rgba(14,165,233,0.25)" : "none",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: isMobile ? "13px" : "13.5px",
+                        color: msg.isMe ? "#fff" : "#cbd5e1",
+                        fontWeight: 300,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {editingId === getMessageId(msg) ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: isMobile ? 180 : 260 }}>
+                          <textarea
+                            value={editingText}
+                            onChange={(event) => setEditingText(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" && !event.shiftKey) {
+                                event.preventDefault();
+                                handleSaveEditedMessage(msg);
+                              }
+                              if (event.key === "Escape") {
+                                cancelEditingMessage();
+                              }
+                            }}
+                            rows={2}
+                            autoFocus
+                            style={{
+                              width: "100%",
+                              resize: "none",
+                              border: "1px solid rgba(255,255,255,0.22)",
+                              borderRadius: "10px",
+                              background: "rgba(3,8,16,0.22)",
+                              color: "#fff",
+                              padding: "8px 9px",
+                              outline: "none",
+                              fontFamily: "'Inter', sans-serif",
+                              fontSize: isMobile ? "13px" : "13.5px",
+                              lineHeight: 1.45,
+                            }}
+                          />
+                          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                            <button
+                              onClick={cancelEditingMessage}
+                              style={{
+                                border: "1px solid rgba(255,255,255,0.14)",
+                                borderRadius: "9px",
+                                background: "rgba(255,255,255,0.08)",
+                                color: "rgba(255,255,255,0.84)",
+                                padding: "5px 9px",
+                                cursor: "pointer",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleSaveEditedMessage(msg)}
+                              disabled={savingEditId === getMessageId(msg)}
+                              style={{
+                                border: "none",
+                                borderRadius: "9px",
+                                background: "rgba(255,255,255,0.92)",
+                                color: "#075985",
+                                padding: "5px 10px",
+                                cursor: savingEditId === getMessageId(msg) ? "wait" : "pointer",
+                                fontSize: "11px",
+                                fontWeight: 800,
+                              }}
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        msg.text
+                      )}
+                    </div>
+
+                    {msg.isMe && !msg.pending && editingId !== getMessageId(msg) && (
+                      <div style={{ position: "relative", flexShrink: 0 }}>
+                        <button
+                          onClick={() => {
+                            setOpenMenuId(openMenuId === getMessageId(msg) ? null : getMessageId(msg));
+                            setDeleteMenuId(null);
+                          }}
+                          style={{
+                            width: 28,
+                            height: 28,
+                            border: "none",
+                            background: "transparent",
+                            color: "rgba(226,232,240,0.78)",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                          aria-label="Message options"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="12" cy="5" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="12" cy="19" r="2" />
+                          </svg>
+                        </button>
+                        
+                        {openMenuId === getMessageId(msg) && (
+                          <div style={{
+                            position: "absolute",
+                            right: "32px",
+                            top: 0,
+                            display: "flex",
+                            flexDirection: "row",
+                            gap: "5px",
+                            background: "rgba(7,18,40,0.95)",
+                            padding: "4px",
+                            borderRadius: "8px",
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            zIndex: 10,
+                          }}>
+                            {deleteMenuId !== getMessageId(msg) ? (
+                              <>
+                                <button
+                                  onClick={() => { startEditingMessage(msg); setOpenMenuId(null); }}
+                                  title="Edit message"
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    background: "rgba(255,255,255,0.05)",
+                                    color: "rgba(226,232,240,0.78)",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                  aria-label="Edit message"
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 20h9" />
+                                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => { setForwardMessage(msg); setOpenMenuId(null); setDeleteMenuId(null); }}
+                                  title="Forward message"
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    background: "rgba(255,255,255,0.05)",
+                                    color: "rgba(226,232,240,0.78)",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                  aria-label="Forward message"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="15 14 20 9 15 4" />
+                                    <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => setDeleteMenuId(getMessageId(msg))}
+                                  title="Delete message"
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    background: "rgba(255,255,255,0.05)",
+                                    color: "rgba(226,232,240,0.78)",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                  aria-label="Delete message options"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 6h18" />
+                                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                                  </svg>
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => { handleUndoMessage(msg, 'me'); setOpenMenuId(null); setDeleteMenuId(null); }}
+                                  disabled={undoingIds.has(getMessageId(msg))}
+                                  title="Delete for me"
+                                  style={{
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    background: "rgba(255,255,255,0.05)",
+                                    color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "rgba(226,232,240,0.78)",
+                                    cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    padding: "4px 8px",
+                                    fontSize: "12px",
+                                    fontFamily: "'Inter', sans-serif",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  aria-label="Delete for me"
+                                >
+                                  For me
+                                </button>
+                                <button
+                                  onClick={() => { handleUndoMessage(msg, 'everyone'); setOpenMenuId(null); setDeleteMenuId(null); }}
+                                  disabled={undoingIds.has(getMessageId(msg))}
+                                  title="Delete for everyone"
+                                  style={{
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    background: "rgba(255,255,255,0.05)",
+                                    color: undoingIds.has(getMessageId(msg)) ? "rgba(148,163,184,0.45)" : "#ef4444",
+                                    cursor: undoingIds.has(getMessageId(msg)) ? "wait" : "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    padding: "4px 8px",
+                                    fontSize: "12px",
+                                    fontFamily: "'Inter', sans-serif",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  aria-label="Delete for everyone"
+                                >
+                                  For everyone
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div
@@ -557,6 +1206,128 @@ function ChatArea({
             </div>
         </div>
       </div>
+      
+      {forwardMessage && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            background: '#0f172a', borderRadius: '16px', padding: '24px', width: '90%', maxWidth: '400px',
+            border: '1px solid rgba(255,255,255,0.1)',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#f8fafc', fontSize: '18px', fontWeight: '600' }}>Forward Message</h3>
+            <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {forwardTargets.length === 0 && (
+                <div style={{ color: '#94a3b8', textAlign: 'center', padding: '20px 0' }}>No existing chats available.</div>
+              )}
+              {forwardTargets.map(user => {
+                return (
+                  <div 
+                    key={user.conversationId}
+                    onClick={() => {
+                      if (!isForwarding) {
+                        handleForwardToUser(user.conversationId);
+                      }
+                    }}
+                    style={{ 
+                      padding: '12px 16px', 
+                      borderRadius: '8px',
+                      background: 'rgba(255,255,255,0.03)',
+                      cursor: isForwarding ? 'wait' : 'pointer', 
+                      color: '#e2e8f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      transition: 'background 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      if(!isForwarding) e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if(!isForwarding) e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                    }}
+                  >
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '50%', background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '14px'
+                    }}>
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ fontWeight: '500' }}>{user.name}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <button 
+              onClick={() => setForwardMessage(null)} 
+              disabled={isForwarding}
+              style={{ 
+                padding: '10px 16px', borderRadius: '8px', background: 'rgba(255,255,255,0.08)', 
+                color: '#fff', border: 'none', cursor: isForwarding ? 'wait' : 'pointer', width: '100%',
+                fontWeight: '600', transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                if(!isForwarding) e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+              }}
+              onMouseLeave={(e) => {
+                if(!isForwarding) e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      
+
+      {forwardToastKey > 0 && (
+        <motion.div
+          key={forwardToastKey}
+          initial={{ opacity: 0, y: -18, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -14, scale: 0.96 }}
+          transition={{ duration: 0.25 }}
+          style={{
+            position: "fixed",
+            top: "20px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            padding: "11px 18px",
+            borderRadius: "14px",
+            background: "rgba(7,18,40,0.94)",
+            border: "1px solid rgba(34,211,238,0.25)",
+            boxShadow: "0 0 24px rgba(34,211,238,0.15)",
+            color: "#e2e8f0",
+            fontFamily: "'Outfit', sans-serif",
+            fontWeight: 600,
+            fontSize: "13px",
+          }}
+        >
+          <span style={{
+            width: 22,
+            height: 22,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #0ea5e9, #22d3ee)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#fff",
+          }}>
+            <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          Message forwarded successfully
+        </motion.div>
+      )}
       </div>
     </motion.div>
   );

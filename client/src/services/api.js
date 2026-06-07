@@ -63,6 +63,9 @@ export const getConversations = () =>
 export const createConversation = (participants) =>
   api.post('/conversations', { participants });
 
+export const deleteConversation = (conversationId) =>
+  api.delete(`/conversations/${conversationId}`);
+
 // ─── Messages ────────────────────────────────────────────────────────────────
 
 /**
@@ -79,3 +82,28 @@ export const getMessages = (conversationId) =>
  */
 export const sendMessage = (conversationId, text) =>
   api.post('/messages', { conversationId, text });
+
+export const undoMessage = (messageId, type = 'everyone') =>
+  api.delete(`/messages/${messageId}?type=${type}`);
+
+export const editMessage = (messageId, text) =>
+  api.patch(`/messages/${messageId}`, { text });
+
+// ─── Message Requests ───────────────────────────────────────────────────────
+export const getMessageRequests = () =>
+  api.get('/messages/requests');
+
+export const getSentMessageRequests = () =>
+  api.get('/messages/requests/sent');
+
+export const createMessageRequest = (toUserId, text) =>
+  api.post('/messages/requests', { toUserId, text });
+
+export const cancelSentMessageRequest = (requestId) =>
+  api.delete(`/messages/requests/sent/${requestId}`);
+
+export const acceptMessageRequest = (requestId) =>
+  api.post(`/messages/requests/${requestId}/accept`);
+
+export const deleteMessageRequest = (requestId) =>
+  api.delete(`/messages/requests/${requestId}`);

@@ -3,6 +3,17 @@ import bcrypt from 'bcrypt';
 
 const SALT_ROUNDS = 10;
 
+const messageRequestSchema = new mongoose.Schema(
+  {
+    from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    text: { type: String, default: '' },
+    fromName: { type: String, default: '' },
+    seen: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
 const userSchema = new mongoose.Schema(
   {
     fullName: {
@@ -36,6 +47,10 @@ const userSchema = new mongoose.Schema(
     lastSeen: {
       type: Date,
       default: Date.now,
+    },
+    messageRequests: {
+      type: [messageRequestSchema],
+      default: [],
     },
   }
 );
