@@ -1,5 +1,5 @@
-import AuthBackground from "../components/layout/AuthBackground";
-import LoginForm from "../components/auth/LoginForm";
+import AuthBackground from "../components/layout/AuthBackground.jsx";
+import LoginForm from "../components/auth/LoginForm.jsx";
 
 export default function LoginPage() {
   return (

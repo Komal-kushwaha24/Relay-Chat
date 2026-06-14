@@ -1,16 +1,16 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
-import useIsMobile from "../hooks/useIsMobile";
+import useIsMobile from "../hooks/useIsMobile.jsx";
 
-import DesktopSidebar from "../components/sidebar/DesktopSidebar";
-import MobileDrawer from "../components/sidebar/MobileDrawer";
-import MobileTopBar from "../components/sidebar/MobileTopBar";
+import DesktopSidebar from "../components/sidebar/DesktopSidebar.jsx";
+import MobileDrawer from "../components/sidebar/MobileDrawer.jsx";
+import MobileTopBar from "../components/sidebar/MobileTopBar.jsx";
 
-import ChatArea from "../components/chat/ChatArea";
-import ProfilePage from "./ProfilePage";
-import { deleteConversation, getCurrentUser, getConversations, getMessageRequests, getSentMessageRequests } from "../services/api";
-import { getSocket } from "../services/socket";
+import ChatArea from "../components/chat/ChatArea.jsx";
+import ProfilePage from "./ProfilePage.jsx";
+import { deleteConversation, getCurrentUser, getConversations, getMessageRequests, getSentMessageRequests } from "../services/api.js";
+import { getSocket } from "../services/socket.js";
 
 const getInitials = (name) => {
   if (!name) return "?";

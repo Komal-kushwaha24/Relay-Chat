@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { AnimatePresence } from "framer-motion";
 
-import AuthBackground from "../components/layout/AuthBackground";
-import SignupForm from "../components/auth/SignupForm";
-import SuccessCard from "../components/auth/SuccessCard";
+import AuthBackground from "../components/layout/AuthBackground.jsx";
+import SignupForm from "../components/auth/SignupForm.jsx";
+import SuccessCard from "../components/auth/SuccessCard.jsx";
 
 export default function Register() {
   const [done, setDone] = useState(false);

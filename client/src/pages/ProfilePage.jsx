@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-import ParticleCanvas from "../components/effects/ParticleCanvas";
-import TiltCard from "../components/effects/TiltCard";
+import ParticleCanvas from "../components/effects/ParticleCanvas.jsx";
+import TiltCard from "../components/effects/TiltCard.jsx";
 
-import FloatInput from "../components/auth/FloatInput";
-import AvatarZone from "../components/profile/AvatarZone";
-import InfoRow from "../components/profile/InfoRow";
-import { getCurrentUser, getCloudinarySignature, updateCurrentUser } from "../services/api";
+import FloatInput from "../components/auth/FloatInput.jsx";
+import AvatarZone from "../components/profile/AvatarZone.jsx";
+import InfoRow from "../components/profile/InfoRow.jsx";
+import { getCurrentUser, getCloudinarySignature, updateCurrentUser } from "../services/api.js";
 
 export default function ProfilePage({ mode = "page", onClose, onProfileUpdated }) {
   const [profile, setProfile] = useState({
