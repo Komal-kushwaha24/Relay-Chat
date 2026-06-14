@@ -3,7 +3,16 @@ import User from '../models/user.model.js';
 import { getAuthCookieName } from '../utils/setAuthCookie.js';
 
 export const protect = async (req, res, next) => {
-  const token = req.cookies[getAuthCookieName()];
+  // 1. Try Authorization: Bearer <token> header first (cross-origin deployments)
+  // 2. Fall back to the httpOnly cookie (same-origin / native-app clients)
+  let token = null;
+
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7);
+  } else {
+    token = req.cookies[getAuthCookieName()];
+  }
 
   if (!token) {
     return res.status(401).json({

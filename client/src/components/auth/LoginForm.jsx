@@ -46,7 +46,9 @@ export default function LoginForm() {
         password: form.password,
       });
 
-      const token = data.token ?? data.data?.id;
+      // Server now returns the JWT in the response body for cross-origin support.
+      // Store it so the axios interceptor can send it as a Bearer header.
+      const token = data.token;
 
       if (token) {
         localStorage.setItem("token", token);

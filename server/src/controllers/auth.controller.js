@@ -32,11 +32,15 @@ export const register = async (req, res) => {
     password,
   });
 
-  setAuthCookie(res, generateToken(user._id));
+  const token = generateToken(user._id);
+  setAuthCookie(res, token);
 
   res.status(201).json({
     success: true,
     message: 'User registered successfully',
+    // token is included so clients on different origins (e.g. Vercel)
+    // can store it in localStorage and send it as a Bearer header.
+    token,
     data: {
       id: user._id,
       fullName: user.fullName,
@@ -75,11 +79,15 @@ export const login = async (req, res) => {
     });
   }
 
-  setAuthCookie(res, generateToken(user._id));
+  const token = generateToken(user._id);
+  setAuthCookie(res, token);
 
   res.status(200).json({
     success: true,
     message: 'Login successful',
+    // token is included so clients on different origins (e.g. Vercel)
+    // can store it in localStorage and send it as a Bearer header.
+    token,
     data: {
       id: user._id,
       fullName: user.fullName,
