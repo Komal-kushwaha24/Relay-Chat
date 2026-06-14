@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import useIsMobile from "../hooks/useIsMobile.jsx";
 
-import DesktopSidebar from "../components/sidebar/DesktopSidebar.jsx";
+import DesktopSidebar from "../components/sidebar/DesktopSideBar.jsx";
 import MobileDrawer from "../components/sidebar/MobileDrawer.jsx";
 import MobileTopBar from "../components/sidebar/MobileTopBar.jsx";
 

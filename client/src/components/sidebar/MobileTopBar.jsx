@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import Avatar from "../common/Avatar";
+import Avatar from "../common/Avatar.jsx";
 
 function MobileTopBar({ onMenuOpen, activeChat, onBack, onDeleteConversation }) {
   const handleDeleteConversation = () => {

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import SidebarContent from "./SidebarContent";
+import SidebarContent from "./SidebarContent.jsx";
 
 function DesktopSidebar({
   active,

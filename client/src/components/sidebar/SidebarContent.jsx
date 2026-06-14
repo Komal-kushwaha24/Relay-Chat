@@ -6,11 +6,11 @@ import {
 
 import { motion, AnimatePresence } from "framer-motion";
 
-import Avatar from "../common/Avatar";
-import SearchBar from "./SearchBar";
-import ChatRow from "./ChatRow";
-import HiddenRequests from "./HiddenRequests";
-import { logoutUser } from "../../services/api";
+import Avatar from "../common/Avatar.jsx";
+import SearchBar from "./SearchBar.jsx";
+import ChatRow from "./ChatRow.jsx";
+import HiddenRequests from "./HiddenRequests.jsx";
+import { logoutUser } from "../../services/api.js";
 
 const getInitials = (name) => {
   if (!name) return "?";

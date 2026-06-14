@@ -1,7 +1,7 @@
 import { memo, useCallback } from "react";
 import { motion } from "framer-motion";
 
-import Avatar from "../common/Avatar";
+import Avatar from "../common/Avatar.jsx";
 
 function ChatRow({
   chat,

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { acceptMessageRequest, deleteMessageRequest } from '../../services/api';
+import { acceptMessageRequest, deleteMessageRequest } from '../../services/api.js';
 
 export default function HiddenRequests({ requests = [], setRequests, open = false, onToggle, onOpenConversation }) {
   const [loading, setLoading] = useState(false);
