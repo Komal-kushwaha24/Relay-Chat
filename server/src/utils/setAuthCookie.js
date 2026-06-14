@@ -9,7 +9,10 @@ export const getAuthCookieOptions = () => {
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isProduction ? 'strict' : 'lax',
+    // 'none' is required for cross-origin cookie sharing (Vercel → Render).
+    // 'strict' blocks the cookie entirely on cross-site requests.
+    // SameSite=None must always be paired with Secure=true.
+    sameSite: isProduction ? 'none' : 'lax',
     maxAge: SEVEN_DAYS_MS,
   };
 };
