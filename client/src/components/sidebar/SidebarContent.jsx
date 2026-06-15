@@ -48,7 +48,9 @@ function SidebarContent({
     }
   };
 
-  const handleLogout = async () => {
+  const handleLogout = async (event) => {
+    event.stopPropagation();
+
     try {
       await logoutUser();
     } catch (err) {

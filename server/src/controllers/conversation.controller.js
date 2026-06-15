@@ -9,9 +9,24 @@ export const getUserConversations = async (req, res) => {
     .populate('participants', 'fullName email profilePicture')
     .sort({ updatedAt: -1 });
 
+  const uniqueConversations = [];
+  const seenParticipantPairs = new Set();
+
+  for (const conversation of conversations) {
+    const participantsKey =
+      conversation.participantsKey || Conversation.getParticipantsKey(conversation.participants);
+
+    if (seenParticipantPairs.has(participantsKey)) {
+      continue;
+    }
+
+    seenParticipantPairs.add(participantsKey);
+    uniqueConversations.push(conversation);
+  }
+
   res.status(200).json({
     success: true,
-    data: conversations,
+    data: uniqueConversations,
   });
 };
 
@@ -26,36 +41,67 @@ export const createConversation = async (req, res) => {
       });
     }
 
-    // Check if conversation already exists between these two participants
-    const existingConversation = await Conversation.findOne({
-      participants: { $all: participants },
+    const normalizedParticipants = Conversation.normalizeParticipants(participants);
+    const participantsKey = Conversation.getParticipantsKey(normalizedParticipants);
+
+    let conversation = await Conversation.findOne({
+      participantsKey: { $exists: false },
+      participants: { $all: normalizedParticipants },
     });
 
-    if (existingConversation) {
-      existingConversation.hiddenFor = (existingConversation.hiddenFor || []).filter(
+    if (conversation) {
+      conversation.participants = normalizedParticipants;
+      conversation.hiddenFor = (conversation.hiddenFor || []).filter(
         (userId) => userId.toString() !== req.user.id
       );
-      await existingConversation.save();
+      await conversation.save();
 
       return res.status(200).json({
         success: true,
-        data: existingConversation,
+        data: conversation,
       });
     }
 
-    const conversation = await Conversation.create({
-      participants,
-      unreadCounts: participants.reduce((map, id) => {
-        map[id] = 0;
-        return map;
-      }, {}),
-    });
+    conversation = await Conversation.findOneAndUpdate(
+      { participantsKey },
+      {
+        $setOnInsert: {
+          participants: normalizedParticipants,
+          participantsKey,
+          unreadCounts: normalizedParticipants.reduce((map, id) => {
+            map[id] = 0;
+            return map;
+          }, {}),
+        },
+        $pull: { hiddenFor: req.user._id },
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+        runValidators: true,
+      }
+    );
 
-    res.status(201).json({
+    const wasExisting = conversation.createdAt.getTime() !== conversation.updatedAt.getTime();
+
+    res.status(wasExisting ? 200 : 201).json({
       success: true,
       data: conversation,
     });
   } catch (error) {
+    if (error.code === 11000) {
+      const participants = Conversation.normalizeParticipants(req.body.participants || []);
+      const conversation = await Conversation.findOne({
+        participantsKey: Conversation.getParticipantsKey(participants),
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: conversation,
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: error.message,

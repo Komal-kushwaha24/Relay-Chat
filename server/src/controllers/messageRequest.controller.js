@@ -67,8 +67,12 @@ export const createMessageRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: 'You cannot message yourself' });
     }
 
+    const participants = Conversation.normalizeParticipants([fromId, toUserId]);
     const existingConversation = await Conversation.findOne({
-      participants: { $all: [fromId, toUserId] },
+      $or: [
+        { participantsKey: Conversation.getParticipantsKey(participants) },
+        { participants: { $all: participants } },
+      ],
     });
 
     if (existingConversation) {
@@ -130,18 +134,51 @@ export const acceptMessageRequest = async (req, res) => {
     const toId = user._id.toString();
     const fromUser = await User.findById(fromId).select('fullName email');
 
-    // find existing conversation between the two users
-    let conversation = await Conversation.findOne({ participants: { $all: [fromId, toId] } });
+    const participants = Conversation.normalizeParticipants([fromId, toId]);
+    const participantsKey = Conversation.getParticipantsKey(participants);
+
+    let conversation = await Conversation.findOne({
+      participantsKey: { $exists: false },
+      participants: { $all: participants },
+    });
+
+    if (conversation) {
+      conversation.participants = participants;
+      await conversation.save();
+    } else {
+      try {
+        conversation = await Conversation.findOneAndUpdate(
+          { participantsKey },
+          {
+            $setOnInsert: {
+              participants,
+              participantsKey,
+              lastMessage: request.text || '',
+              unreadCounts: {
+                [fromId]: 0,
+                [toId]: 0,
+              },
+            },
+            $pull: { hiddenFor: { $in: [fromId, toId] } },
+          },
+          {
+            new: true,
+            upsert: true,
+            setDefaultsOnInsert: true,
+            runValidators: true,
+          }
+        );
+      } catch (error) {
+        if (error.code !== 11000) {
+          throw error;
+        }
+
+        conversation = await Conversation.findOne({ participantsKey });
+      }
+    }
 
     if (!conversation) {
-      conversation = await Conversation.create({
-        participants: [fromId, toId],
-        lastMessage: request.text || '',
-        unreadCounts: {
-          [fromId]: 0,
-          [toId]: 0,
-        },
-      });
+      conversation = await Conversation.findOne({ participantsKey });
     }
 
     if (request.text?.trim()) {
@@ -169,6 +206,11 @@ export const acceptMessageRequest = async (req, res) => {
     // remove the request
     user.messageRequests.pull({ _id: requestId });
     await user.save();
+
+    await User.updateOne(
+      { _id: fromId },
+      { $pull: { messageRequests: { from: toId } } }
+    );
 
     await conversation.populate('participants', 'fullName email profilePicture');
 
