@@ -3,41 +3,37 @@ import User from '../models/user.model.js';
 import { getAuthCookieName } from '../utils/setAuthCookie.js';
 
 export const protect = async (req, res, next) => {
-  // 1. Try Authorization: Bearer <token> header first (cross-origin deployments)
-  // 2. Fall back to the httpOnly cookie (same-origin / native-app clients)
-  let token = null;
-
   const authHeader = req.headers['authorization'];
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.slice(7);
-  } else {
-    token = req.cookies[getAuthCookieName()];
-  }
+  const bearerToken =
+    authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const cookieToken = req.cookies[getAuthCookieName()];
+  const tokens = [bearerToken, cookieToken].filter(Boolean);
 
-  if (!token) {
+  if (tokens.length === 0) {
     return res.status(401).json({
       success: false,
       message: 'Not authorized, no token provided',
     });
   }
 
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.userId).select('-password');
+  for (const token of tokens) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await User.findById(decoded.userId).select('-password');
 
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Not authorized, user not found',
-      });
+      if (!user) {
+        continue;
+      }
+
+      req.user = user;
+      return next();
+    } catch {
+      // Try the next auth source before rejecting the request.
     }
-
-    req.user = user;
-    next();
-  } catch {
-    return res.status(401).json({
-      success: false,
-      message: 'Not authorized, invalid token',
-    });
   }
+
+  return res.status(401).json({
+    success: false,
+    message: 'Not authorized, invalid token',
+  });
 };
