@@ -216,48 +216,12 @@ CLOUDINARY_API_SECRET=your_api_secret
 
 ---
 
-## 📜 Available Scripts
-
-Run these from the **project root**:
-
-| Command | Description |
-|---|---|
-| `npm run dev` | Start **both** client and server in development mode (concurrently) |
-| `npm run dev:client` | Start only the Vite dev server (port `5173`) |
-| `npm run dev:server` | Start only the Express server with Nodemon |
-| `npm run build` | Build the React client for production |
-| `npm run start` | Start the Express server in production mode |
-| `npm run install:all` | Install dependencies for root + client + server |
-
-
----
-
 ## 🔐 Authentication Flow
 
 1. User registers or logs in → server issues a **JWT stored in an HTTP-only cookie**.
 2. All subsequent API calls include the cookie automatically (`withCredentials: true` on the Axios instance).
 3. Protected routes use the `authMiddleware` to verify the JWT and attach `req.user`.
 4. Socket connections are authenticated by reading the same JWT cookie on handshake inside `sockets/index.js`.
-
----
-
-## 🌐 Environment Variables Reference
-
-| Variable | Required | Description |
-|---|---|---|
-| `NODE_ENV` | ✅ | `development` or `production` |
-| `PORT` | ✅ | Express server port (default `5000`, auto-increments if in use) |
-| `CLIENT_URL` | ✅ | Vite dev server URL for CORS (`http://localhost:5173`) |
-| `MONGODB_URI` | ✅ | Full MongoDB connection string |
-| `JWT_SECRET` | ✅ | Secret key used to sign tokens (keep this long and random) |
-| `EMAIL_USER` | ⚠️ | Gmail address used as the SMTP sender |
-| `EMAIL_PASS` | ⚠️ | Gmail App Password (not your account password) |
-| `EMAIL_FROM` | ⚠️ | Display name + address for outgoing emails |
-| `CLOUDINARY_CLOUD_NAME` | ⚠️ | Your Cloudinary cloud name |
-| `CLOUDINARY_API_KEY` | ⚠️ | Cloudinary API key |
-| `CLOUDINARY_API_SECRET` | ⚠️ | Cloudinary API secret |
-
-> ⚠️ = optional but required for that specific feature to work.
 
 ---
 
@@ -270,9 +234,82 @@ Run these from the **project root**:
 
 ---
 
-## 📄 License
+## 🔌 API Endpoints
 
-This project is open source and available under the [MIT License](LICENSE).
+All API routes are mounted under `/api`.
+
+### Auth
+
+| Method | Endpoint | Access | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/auth/register` | Public | Create an account |
+| `POST` | `/api/auth/login` | Public | Log in and receive a JWT |
+| `POST` | `/api/auth/logout` | Public | Clear the auth cookie |
+| `POST` | `/api/auth/forgot-password` | Public | Send a password reset email |
+| `GET` | `/api/auth/reset-password/:token` | Public | Validate a reset token |
+| `POST` | `/api/auth/reset-password/:token` | Public | Set a new password |
+| `GET` | `/api/auth/me` | Protected | Get the current user |
+| `PUT` | `/api/auth/me` | Protected | Update the current user profile |
+| `GET` | `/api/auth/users` | Protected | List users except the current user |
+
+### Conversations
+
+| Method | Endpoint | Access | Description |
+| --- | --- | --- | --- |
+| `GET` | `/api/conversations` | Protected | Get the current user's conversations |
+| `POST` | `/api/conversations` | Protected | Create or return a one-to-one conversation |
+| `DELETE` | `/api/conversations/:conversationId` | Protected | Delete a conversation for the current user |
+
+### Messages
+
+| Method | Endpoint | Access | Description |
+| --- | --- | --- | --- |
+| `GET` | `/api/messages/:conversationId` | Protected | Get messages for a conversation |
+| `POST` | `/api/messages` | Protected | Send a message |
+| `PATCH` | `/api/messages/:messageId` | Protected | Edit a message |
+| `DELETE` | `/api/messages/:messageId?type=everyone` | Protected | Delete or undo a message |
+
+### Message Requests
+
+| Method | Endpoint | Access | Description |
+| --- | --- | --- | --- |
+| `GET` | `/api/messages/requests` | Protected | Get received message requests |
+| `POST` | `/api/messages/requests` | Protected | Send a message request |
+| `GET` | `/api/messages/requests/sent` | Protected | Get sent message requests |
+| `DELETE` | `/api/messages/requests/sent/:requestId` | Protected | Cancel a sent request |
+| `POST` | `/api/messages/requests/:requestId/accept` | Protected | Accept a request |
+| `DELETE` | `/api/messages/requests/:requestId` | Protected | Reject or delete a request |
+
+### Uploads and Health
+
+| Method | Endpoint | Access | Description |
+| --- | --- | --- | --- |
+| `GET` | `/api/cloudinary/signature` | Protected | Generate a signed Cloudinary upload payload |
+| `GET` | `/api/health` | Public | Check API health |
+| `GET` | `/` | Public | Basic API information |
+
+---
+## 🚀 Deployment 
+The application is deployed at: https://relay-chat-phi.vercel.app 
+Backend: Render Frontend: Vercel Database: MongoDB Atlas
+
+---
+
+## ⚠️ Known Issues and Limitations
+
+- Email features require valid Gmail app-password SMTP credentials.
+- Profile image uploads require Cloudinary credentials; the rest of the app can run without uploads.
+- The app focuses on one-to-one conversations and does not currently include group chats.
+- Message search, media messages, reactions, and read receipts are not implemented.
+---
+
+## ✨ Future Enhancements
+
+- Add group conversations and admin controls
+- Add read receipts, message reactions, and pinned messages
+- Add image/file messages beyond profile avatars
+- Add conversation search and message search
+- Add rate limiting and stronger abuse protection
 
 ---
 
